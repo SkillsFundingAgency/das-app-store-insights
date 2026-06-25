@@ -40,6 +40,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Configuration\" />
+		<ProjectReference Include="..\SFA.DAS.AppStoreInsights.Shared\SFA.DAS.AppStoreInsights.Shared.csproj" />
 	</ItemGroup>
 </Project>
