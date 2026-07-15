@@ -287,14 +287,6 @@
                                     "value": "[parameters('sharedStorageAccountConnectionString')]"
                                 },
                                 {
-                                    "name": "LoggingRedisConnectionString",
-                                    "value": "[parameters('loggingRedisConnectionString')]"
-                                },
-                                {
-                                    "name": "LoggingRedisKey",
-                                    "value": "[parameters('loggingRedisKey')]"
-                                },
-                                {
                                     "name": "FUNCTIONS_EXTENSION_VERSION",
                                     "value": "~4"
                                 },
