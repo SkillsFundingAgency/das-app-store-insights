@@ -287,6 +287,14 @@
                                     "value": "[parameters('sharedStorageAccountConnectionString')]"
                                 },
                                 {
+                                    "name": "LoggingRedisConnectionString",
+                                    "value": "[parameters('loggingRedisConnectionString')]"
+                                },
+                                {
+                                    "name": "LoggingRedisKey",
+                                    "value": "[parameters('loggingRedisKey')]"
+                                },
+                                {
                                     "name": "FUNCTIONS_EXTENSION_VERSION",
                                     "value": "~4"
                                 },
@@ -312,6 +320,27 @@
             "dependsOn": [
                 "[variables('resourceGroupName')]",
                 "[concat(variables('appServicePlanName'), '-', parameters('utcValue'))]"
+            ]
+        },
+        {
+            "apiVersion": "2022-09-01",
+            "name": "[concat(variables('functionAppName'), '-cors-policies-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'cors-policy.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "functionAppName": {
+                        "value": "[variables('functionAppName')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('functionAppName'), '-', parameters('utcValue'))]"
             ]
         },
         {
