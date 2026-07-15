@@ -102,7 +102,7 @@
         "appServicePlanName": "[concat(variables('resourceNamePrefix'), '-asp')]",
         "databaseName": "[concat(variables('resourceNamePrefix'), '-db')]",
         "privateLinkScopeName": "[toLower(concat('das-', parameters('resourceEnvironmentName'),'-shared-ampls'))]",
-        "configNames": "SFA.DAS.AppStoreInsights",
+        "configNames": "SFA.DAS.AppStoreInsights.Feedback.Functions",
         "routeTableId": {
             "id": "[resourceId(subscription().subscriptionId, parameters('sharedEnvResourceGroup'), 'Microsoft.Network/routeTables', parameters('SharedRouteTableName'))]"
         },
