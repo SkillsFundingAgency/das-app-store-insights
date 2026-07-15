@@ -41,12 +41,10 @@ jobs:
             TargetFileName: '*.schema.json'
             TableName: Configuration
             ConfigurationSecrets:
-              AppleAppId: $(AppleAppId)
-              GooglePackageName: $(GooglePackageName)
+              AzureWebJobsStorage: $(SharedStorageAccountConnectionString)
+              ConfigurationStorageConnectionString: $(ConfigurationStorageConnectionString)
+              SqlConnectionString: $(SqlConnectionString)
               ApplePrivateKey: $(ApplePrivateKey)
-              AppleIssuerId: $(AppleIssuerId)
-              AppleKeyId: $(AppleKeyId)
-              AppleVendorNumber: $(AppleVendorNumber)
               GoogleServiceAccountJson: $(GoogleServiceAccountJson)
         - template: azure-pipelines-templates/deploy/step/sql-dacpac-deploy.yml@das-platform-building-blocks
           parameters:
