@@ -40,7 +40,7 @@ resources:
   - pipeline: das-employer-config
     project: Digital Apprenticeship Service
     source: das-employer-config
-    branch: master
+    branch: AAD-2113_App_Store_Insights
 
 stages:
 - stage: Build
