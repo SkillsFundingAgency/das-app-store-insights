@@ -26,7 +26,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         private readonly string _privateKeyPem;
         private readonly string _issuerId;
         private readonly string _keyId;
-        private readonly string _vendorNumber; 
+        private readonly string _vendorNumber;
 
         private string _cachedJwt;
         private DateTime _jwtExpiry = DateTime.UtcNow;
@@ -87,13 +87,23 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             var token = await GetJwtTokenAsync();
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-            var since = sinceUtc.ToString("yyyy-MM-dd'T'HH:mm:ssZ");
-            var url = $"customerReviews?filter[appAppleId]={appAppleId}&filter[lastModifiedDate]={since}&limit=200&sort=modifiedDate";
-            var allReviews = new List<AppleStoreReview>();
+            var url = $"apps/{appAppleId}/customerReviews?limit=200&sort=-createdDate";
+            _logger.LogDebug("Apple reviews URL: {Url}", url);
 
-            while (!string.IsNullOrEmpty(url))
+            var allReviews = new List<AppleStoreReview>();
+            bool shouldStop = false;
+
+            while (!string.IsNullOrEmpty(url) && !shouldStop)
             {
                 var response = await SendWithRetryAsync(() => _httpClient.GetAsync(url, cancellationToken));
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogError("Apple API request failed: {StatusCode} - {Error}", response.StatusCode, errorBody);
+                    response.EnsureSuccessStatusCode();
+                }
+
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 var parsed = JsonSerializer.Deserialize<AppleReviewsResponse>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
@@ -101,6 +111,14 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 {
                     foreach (var item in parsed.Data)
                     {
+                        var reviewDate = item.Attributes?.CreatedDate ?? DateTime.UtcNow;
+
+                        if (reviewDate < sinceUtc)
+                        {
+                            shouldStop = true;
+                            break;
+                        }
+
                         var review = new AppleStoreReview
                         {
                             ReviewId = item.Id,
@@ -108,8 +126,8 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                             Rating = item.Attributes?.Rating ?? 0,
                             Title = "",
                             Comment = item.Attributes?.Body ?? "",
-                            ReviewDateUtc = item.Attributes?.CreatedDate ?? DateTime.UtcNow,
-                            LastModifiedUtc = item.Attributes?.LastModifiedDate ?? DateTime.UtcNow,
+                            ReviewDateUtc = reviewDate,
+                            LastModifiedUtc = item.Attributes?.LastModifiedDate ?? reviewDate,
                             DeviceInfo = $"{item.Attributes?.DeviceType} / {item.Attributes?.OsVersion}",
                             DeveloperReply = item.Attributes?.DeveloperResponse != null
                                 ? new AppleStoreDeveloperReply
@@ -124,11 +142,19 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                     }
                 }
 
-                url = parsed?.Links?.Next;
-                if (!string.IsNullOrEmpty(url) && !url.StartsWith("https"))
-                    url = $"https://api.appstoreconnect.apple.com/v1/{url}";
+                if (!shouldStop)
+                {
+                    url = parsed?.Links?.Next;
+                    if (!string.IsNullOrEmpty(url) && !url.StartsWith("https"))
+                        url = $"https://api.appstoreconnect.apple.com/v1/{url}";
+                }
+                else
+                {
+                    url = null;
+                }
             }
 
+            _logger.LogInformation("Retrieved {Count} Apple reviews since {Since}", allReviews.Count, sinceUtc);
             return allReviews;
         }
 
@@ -137,131 +163,101 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             _logger.LogInformation("Fetching Apple Sales & Trends report for {Start} to {End}", startDate, endDate);
 
             var token = await GetJwtTokenAsync();
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var allMetrics = new List<AppleStoreUsageMetric>();
+            var currentDate = startDate;
 
-            var reportRequest = new
+            while (currentDate <= endDate)
             {
-                data = new
+                var dateStr = currentDate.ToString("yyyy-MM-dd");
+                var query = $"salesReports?filter[reportType]=SALES&filter[reportSubType]=SUMMARY&filter[vendorNumber]={Uri.EscapeDataString(_vendorNumber)}&filter[reportDate]={dateStr}&filter[frequency]=DAILY";
+
+                _logger.LogDebug("Fetching report for {Date}: {Query}", currentDate, query);
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, query);
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/a-gzip"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                var response = await SendWithRetryAsync(() => _httpClient.SendAsync(request, cancellationToken));
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    type = "salesReports",
-                    attributes = new
-                    {
-                        reportType = "SALES",
-                        reportSubType = "SUMMARY",
-                        vendorNumber = _vendorNumber,
-                        reportDate = startDate.ToString("yyyy-MM-dd"),
-                        frequency = "DAILY",
-                        version = "1_0"
-                    }
+                    var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogWarning("Failed to get report for {Date}: {StatusCode} - {Error}", currentDate, response.StatusCode, error);
+                    currentDate = currentDate.AddDays(1);
+                    continue;
                 }
-            };
-            var requestJson = JsonSerializer.Serialize(reportRequest);
-            var requestContent = new StringContent(requestJson, Encoding.UTF8, "application/json");
-            var createResponse = await SendWithRetryAsync(() => _httpClient.PostAsync("salesReports", requestContent, cancellationToken));
 
-            if (!createResponse.IsSuccessStatusCode)
-            {
-                var error = await createResponse.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("Failed to request Apple sales report: {StatusCode} - {Error}", createResponse.StatusCode, error);
-                throw new HttpRequestException($"Apple report request failed: {createResponse.StatusCode}");
+                await using var compressedStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var decompressor = new GZipStream(compressedStream, CompressionMode.Decompress);
+                using var reader = new StreamReader(decompressor, Encoding.UTF8);
+                var tsvContent = await reader.ReadToEndAsync(cancellationToken);
+
+                var dailyMetrics = ParseSalesReportTsv(tsvContent, currentDate, currentDate, appAppleId);
+                allMetrics.AddRange(dailyMetrics);
+
+                currentDate = currentDate.AddDays(1);
             }
-            
-            var reportUrl = await PollForReportUrlAsync(createResponse, cancellationToken);
 
-            var tsvData = await DownloadAndDecompressReportAsync(reportUrl, cancellationToken);
-
-            var metrics = ParseSalesReportTsv(tsvData, startDate, endDate, appAppleId);
-            _logger.LogInformation("Parsed {Count} daily metrics from Apple sales report", metrics.Count);
-            return metrics;
-        }
-
-        private async Task<string> PollForReportUrlAsync(HttpResponseMessage initialResponse, CancellationToken ct)
-        {
-            var operationUrl = initialResponse.Headers.Location?.ToString();
-            if (string.IsNullOrEmpty(operationUrl))
-                throw new InvalidOperationException("No operation URL returned from Apple report request");
-
-            const int maxAttempts = 30;
-            const int delaySeconds = 5;
-
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                var statusResponse = await SendWithRetryAsync(() => _httpClient.GetAsync(operationUrl, ct));
-                var statusJson = await statusResponse.Content.ReadAsStringAsync(ct);
-                using var doc = JsonDocument.Parse(statusJson);
-                var status = doc.RootElement.GetProperty("data").GetProperty("attributes").GetProperty("status").GetString();
-
-                if (status == "COMPLETE")
-                {
-                    var reportUrl = doc.RootElement.GetProperty("data").GetProperty("attributes").GetProperty("url").GetString();
-                    if (!string.IsNullOrEmpty(reportUrl))
-                        return reportUrl;
-                }
-                else if (status == "FAILED")
-                {
-                    throw new Exception("Apple report generation failed");
-                }
-                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), ct);
-            }
-            throw new TimeoutException("Apple report generation timed out");
-        }
-
-        private async Task<string> DownloadAndDecompressReportAsync(string reportUrl, CancellationToken ct)
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, reportUrl);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetJwtTokenAsync());
-            var response = await SendWithRetryAsync(() => _httpClient.SendAsync(request, ct));
-            response.EnsureSuccessStatusCode();
-
-            await using var compressedStream = await response.Content.ReadAsStreamAsync(ct);
-            using var decompressor = new GZipStream(compressedStream, CompressionMode.Decompress);
-            using var reader = new StreamReader(decompressor, Encoding.UTF8);
-            return await reader.ReadToEndAsync(ct);
+            _logger.LogInformation("Fetched {Count} daily metrics from Apple", allMetrics.Count);
+            return allMetrics;
         }
 
         private List<AppleStoreUsageMetric> ParseSalesReportTsv(string tsvContent, DateOnly startDate, DateOnly endDate, string appAppleId)
         {
-            var metrics = new List<AppleStoreUsageMetric>();
+            var metrics = new Dictionary<DateOnly, AppleStoreUsageMetric>();
             var lines = tsvContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            if (lines.Length < 2) return metrics;
+            if (lines.Length < 2)
+                return new List<AppleStoreUsageMetric>();
 
-            // First line is header
-            var headers = lines[0].Split('\t');
-            var dateIndex = Array.IndexOf(headers, "Date");
+            var headers = lines[0].Split('\t', StringSplitOptions.None);
+            var dateIndex = Array.IndexOf(headers, "Begin Date");
+            if (dateIndex == -1)
+                dateIndex = Array.IndexOf(headers, "End Date");
             var appIdIndex = Array.IndexOf(headers, "Apple Identifier");
             var unitsIndex = Array.IndexOf(headers, "Units");
-            var installsIndex = Array.IndexOf(headers, "Installments");
-            // Note: Apple reports "Units" are first-time downloads; "Installments" are total installs.
-            // Uninstalls and sessions are not available in this report.
 
             for (int i = 1; i < lines.Length; i++)
             {
-                var columns = lines[i].Split('\t');
-                if (columns.Length <= Math.Max(dateIndex, appIdIndex)) continue;
+                var columns = lines[i].Split('\t', StringSplitOptions.None);
+                // Ensure we have enough columns for the indices we need
+                if (columns.Length <= Math.Max(dateIndex, Math.Max(appIdIndex, unitsIndex)))
+                    continue;
 
                 var dateStr = columns[dateIndex];
-                if (!DateOnly.TryParse(dateStr, out var date)) continue;
+                if (!DateOnly.TryParse(dateStr, out var date))
+                    continue;
 
                 var appIdFromReport = columns[appIdIndex];
-                if (appIdFromReport != appAppleId) continue; // filter by app
+                if (appIdFromReport != appAppleId)
+                    continue;
 
-                var downloads = unitsIndex >= 0 && int.TryParse(columns[unitsIndex], out var units) ? units : 0;
-                var installs = installsIndex >= 0 && int.TryParse(columns[installsIndex], out var inst) ? inst : 0;
+                if (!int.TryParse(columns[unitsIndex], out var units))
+                    continue;
 
                 if (date >= startDate && date <= endDate)
                 {
-                    metrics.Add(new AppleStoreUsageMetric
+                    if (!metrics.TryGetValue(date, out var metric))
                     {
-                        Date = date,
-                        Downloads = downloads,
-                        Installs = installs,
-                        Uninstalls = 0, // not available for apple
-                        Sessions = 0,   // not available for apple
-                        DailyActiveDevices = 0
-                    });
+                        metric = new AppleStoreUsageMetric
+                        {
+                            Date = date,
+                            Downloads = 0,
+                            Installs = 0,
+                            Uninstalls = 0,
+                            Sessions = 0,
+                            DailyActiveDevices = 0
+                        };
+                        metrics[date] = metric;
+                    }
+                    // Aggregate Units – we'll treat both Downloads and Installs as total units for now.
+                    // If you need to separate new downloads from updates, use "Product Type Identifier" filter.
+                    metric.Downloads += units;
+                    metric.Installs += units;
                 }
             }
-            return metrics;
+
+            return metrics.Values.ToList();
         }
 
         public async Task PostResponseAsync(string appAppleId, string reviewId, string responseText, CancellationToken cancellationToken = default)
@@ -286,7 +282,12 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             };
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
             var response = await SendWithRetryAsync(() => _httpClient.PostAsync("reviewResponses", content, cancellationToken));
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Posting reply failed: {StatusCode} - {Error}", response.StatusCode, error);
+                response.EnsureSuccessStatusCode();
+            }
         }
 
         private async Task<HttpResponseMessage> SendWithRetryAsync(Func<Task<HttpResponseMessage>> action, int maxRetries = 3)

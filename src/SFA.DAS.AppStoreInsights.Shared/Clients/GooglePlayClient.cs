@@ -83,10 +83,10 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                             ReviewerName = rev.AuthorName,
                             Rating = userComment.StarRating ?? 0,
                             Title = "",
-                            Comment = userComment.Text ?? "",
+                            Comment = userComment.Text.Replace("\t","") ?? "",
                             ReviewDateUtc = reviewDate,
                             LastModifiedUtc = reviewDate,
-                            DeviceInfo = userComment.Device ?? "",
+                            DeviceInfo = userCommentObj.UserComment.DeviceMetadata.ProductName ?? "",
                             DeveloperReply = developerComment != null
                                 ? new GooglePlayDeveloperReply
                                 {
@@ -136,7 +136,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             var requestBody = new
             {
                 dimensions = new[] { "date" },
-                metrics = new[] { "acquiredUsers", "totalUsers", "uninstallers", "activeUsers" },
+                metrics = new[] { "acquiredUsers", "totalUsers", "uninstallEvents", "activeUsers" },
                 dateRange = new
                 {
                     startDate = new { year = date.Year, month = date.Month, day = date.Day },
