@@ -36,10 +36,12 @@ namespace SFA.DAS.AppStoreInsights.Feedback.Functions
         }
 
         [Function("FetchAppStoreFeedback")]
-        public async Task Run([TimerTrigger("0 0 2 * * *")] TimerInfo timer, FunctionContext context)
+        public async Task Run(
+            [TimerTrigger("0 0 2 * * *", RunOnStartup = true)] TimerInfo timer,
+            FunctionContext context)
         {
             var appId = await _repo.GetAppIdAsync("Apprentice App", CancellationToken.None);
-            var yesterday = DateTime.UtcNow.AddDays(-1);
+            var yesterday = DateTime.UtcNow.AddYears(-3);
 
             string appleAppId = _appConfig.AppleAppId;
             string googlePackageName = _appConfig.GooglePackageName;

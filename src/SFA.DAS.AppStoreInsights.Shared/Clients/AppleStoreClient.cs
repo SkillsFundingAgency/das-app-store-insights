@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore.Metadata.Conventions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System;
@@ -124,7 +125,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                             ReviewId = item.Id,
                             ReviewerName = item.Attributes?.ReviewerNickname ?? "Anonymous",
                             Rating = item.Attributes?.Rating ?? 0,
-                            Title = "",
+                            Title = item.Attributes?.Title ?? "",
                             Comment = item.Attributes?.Body ?? "",
                             ReviewDateUtc = reviewDate,
                             LastModifiedUtc = item.Attributes?.LastModifiedDate ?? reviewDate,
@@ -331,6 +332,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         {
             public string Body { get; set; }
             public int Rating { get; set; }
+            public string Title { get; set; }
             public string ReviewerNickname { get; set; }
             public DateTime CreatedDate { get; set; }
             public DateTime LastModifiedDate { get; set; }
