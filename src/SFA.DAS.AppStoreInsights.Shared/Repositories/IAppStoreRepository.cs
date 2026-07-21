@@ -2,6 +2,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using SFA.DAS.AppStoreInsights.Shared.Models;
+using SFA.DAS.AppStoreInsights.Shared.Infrastructure;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -23,17 +24,18 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
     [ExcludeFromCodeCoverage]
     public class SqlAppStoreRepository : IAppStoreRepository
     {
+        private readonly IConnectionFactory _connectionFactory;
         private readonly string _connectionString;
 
-        public SqlAppStoreRepository(IConfiguration config)
+        public SqlAppStoreRepository(IConnectionFactory connectionFactory, string connectionString)
         {
-            _connectionString = config["SqlConnectionString"]
-                ?? throw new InvalidOperationException("SqlConnectionString not found in configuration");
+            _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+            _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         }
 
         public async Task<int> GetAppIdAsync(string appName, CancellationToken ct)
         {
-            using var conn = new SqlConnection(_connectionString);
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
             return await conn.ExecuteScalarAsync<int>(
                 new CommandDefinition(
                     "SELECT Id FROM [dbo].[App] WHERE Name = @name",
@@ -44,7 +46,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
 
         public async Task<bool> ReviewExistsAsync(byte vendorId, string externalId, CancellationToken ct)
         {
-            using var conn = new SqlConnection(_connectionString);
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
             var count = await conn.ExecuteScalarAsync<int>(
                 new CommandDefinition(
                     "SELECT COUNT(1) FROM [dbo].[Review] WHERE VendorId = @vendorId AND ExternalId = @externalId",
@@ -60,7 +62,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
                 INSERT INTO [dbo].[Review] (AppId, VendorId, ExternalId, ReviewerName, Rating, Title, Comment, ReviewDate, DeviceInfo, IsNegative)
                 VALUES (@AppId, @VendorId, @ExternalId, @ReviewerName, @Rating, @Title, @Comment, @ReviewDate, @DeviceInfo, @IsNegative)";
 
-            using var conn = new SqlConnection(_connectionString);
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
             await conn.ExecuteAsync(
                 new CommandDefinition(sql, review, cancellationToken: ct));
         }
@@ -76,17 +78,18 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
                     AND ProcessedAt IS NULL
                 ORDER BY ReviewDate DESC";
 
-            using var conn = new SqlConnection(_connectionString);
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
             return await conn.QueryAsync<Review>(
                 new CommandDefinition(sql, new { appId }, cancellationToken: ct));
         }
+
         public async Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct)
         {
             const string sql = @"
                     INSERT INTO [dbo].[Response] (ReviewId, ResponderType, ResponseText, ResponseDate, CreatedAt)
                     VALUES (@reviewId, @responderType, @responseText, @responseDate, @createdAt)";
 
-            using var conn = new SqlConnection(_connectionString);
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
             await conn.ExecuteAsync(
                 new CommandDefinition(sql, new
                 {
