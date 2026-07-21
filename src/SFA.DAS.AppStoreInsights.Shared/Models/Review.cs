@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SFA.DAS.AppStoreInsights.Shared.Models
 {
+    [ExcludeFromCodeCoverage]
     public class Review
     {
         public long Id { get; set; }

@@ -1,13 +1,15 @@
 ﻿using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SFA.DAS.AppStoreInsights.Feedback.Functions.Configuration;
 using SFA.DAS.AppStoreInsights.Shared.Clients;
 using SFA.DAS.AppStoreInsights.Shared.Models;
 using SFA.DAS.AppStoreInsights.Shared.Repositories;
-using SFA.DAS.AppStoreInsights.Feedback.Functions.Configuration;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SFA.DAS.AppStoreInsights.Feedback.Functions
 {
+    [ExcludeFromCodeCoverage]
     public class FeedbackIngestionFunction
     {
         private readonly IAppStoreRepository _repo;
