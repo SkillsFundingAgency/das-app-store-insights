@@ -295,7 +295,7 @@
                                 },
                                 {
                                     "name": "SqlConnectionString",
-                                    "value": "[parameters('configurationStorageConnectionString')]"
+                                    "value": "[parameters('SqlConnectionString')]"
                                 },
                                 {
                                     "name": "WEBSITE_RUN_FROM_PACKAGE",
