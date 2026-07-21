@@ -83,7 +83,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                             ReviewerName = rev.AuthorName,
                             Rating = userComment.StarRating ?? 0,
                             Title = "",
-                            Comment = userComment.Text.Replace("\t","") ?? "",
+                            Comment = userComment.Text?.Replace("\t","") ?? "",
                             ReviewDateUtc = reviewDate,
                             LastModifiedUtc = reviewDate,
                             DeviceInfo = userCommentObj.UserComment.DeviceMetadata.ProductName ?? "",
