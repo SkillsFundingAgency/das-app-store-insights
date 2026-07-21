@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -56,6 +57,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Normalised Google Play review.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class GooglePlayReview
     {
         /// <summary>Google's unique review ID (e.g., "gp:AOqpTOE...")</summary>
@@ -89,6 +91,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Developer’s reply to a Google Play review.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class GooglePlayDeveloperReply
     {
         public string ReplyText { get; set; }
@@ -99,6 +102,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Daily download/install statistics from Google Play Console.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class GooglePlayUsageMetric
     {
         public DateOnly Date { get; set; }
@@ -107,5 +111,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         public int Uninstalls { get; set; }      // Device uninstalls
         public int DailyActiveUsers { get; set; } // Optional – useful for dashboards
         public int Sessions { get; set; }         // Number of app opens
+        public string RawDataJson { get; set; }   
     }
 }

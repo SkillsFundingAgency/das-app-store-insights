@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -58,6 +59,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Normalised Apple App Store review.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class AppleStoreReview
     {
         /// <summary>Apple’s unique review ID (e.g., "A1B2C3D4-...")</summary>
@@ -91,6 +93,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Developer’s response to an Apple review.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class AppleStoreDeveloperReply
     {
         public string ResponseText { get; set; }
@@ -101,6 +104,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Daily download, install, and session metrics from Apple Sales & Trends.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class AppleStoreUsageMetric
     {
         public DateOnly Date { get; set; }
