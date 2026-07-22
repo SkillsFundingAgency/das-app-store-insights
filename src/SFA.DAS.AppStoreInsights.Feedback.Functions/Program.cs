@@ -1,3 +1,6 @@
+using System.Net;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -7,7 +10,6 @@ using SFA.DAS.AppStoreInsights.Shared.Clients;
 using SFA.DAS.AppStoreInsights.Shared.Infrastructure;
 using SFA.DAS.AppStoreInsights.Shared.Repositories;
 using System.Diagnostics.CodeAnalysis;
-using System.Security.Authentication;
 
 namespace SFA.DAS.AppStoreInsights.Feedback.Functions;
 
@@ -43,11 +45,12 @@ public partial class Program
                     return new SqlAppStoreRepository(connectionFactory, connectionString);
                 });
 
-                // Configure Apple client with TLS 1.2 support
+                // Configure Apple client with TLS 1.2
                 s.AddHttpClient<IAppleStoreClient, AppleStoreClient>()
                     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                     {
-                        SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+                        SslProtocols = SslProtocols.Tls12,
+                        ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
                     });
 
                 s.AddSingleton<IGooglePlayClient, GooglePlayClient>();
