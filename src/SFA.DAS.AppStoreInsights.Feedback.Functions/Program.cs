@@ -7,6 +7,7 @@ using SFA.DAS.AppStoreInsights.Shared.Clients;
 using SFA.DAS.AppStoreInsights.Shared.Infrastructure;
 using SFA.DAS.AppStoreInsights.Shared.Repositories;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Authentication;
 
 namespace SFA.DAS.AppStoreInsights.Feedback.Functions;
 
@@ -42,7 +43,13 @@ public partial class Program
                     return new SqlAppStoreRepository(connectionFactory, connectionString);
                 });
 
-                s.AddHttpClient<IAppleStoreClient, AppleStoreClient>();
+                // Configure Apple client with TLS 1.2 support
+                s.AddHttpClient<IAppleStoreClient, AppleStoreClient>()
+                    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                    {
+                        SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+                    });
+
                 s.AddSingleton<IGooglePlayClient, GooglePlayClient>();
             })
             .Build();
