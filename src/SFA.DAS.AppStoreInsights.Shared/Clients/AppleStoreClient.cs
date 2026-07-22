@@ -52,8 +52,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 return _cachedJwt;
 
             using var ecdsa = ECDsa.Create();
-            var privateKeyBytes = ParsePkcs8PrivateKey(_privateKeyPem);
-            ecdsa.ImportPkcs8PrivateKey(privateKeyBytes, out _);
+            ecdsa.ImportFromPem(_privateKeyPem);
 
             var handler = new JwtSecurityTokenHandler();
             var now = DateTime.UtcNow;
@@ -72,15 +71,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             _cachedJwt = handler.WriteToken(token);
             _jwtExpiry = now.AddMinutes(15);
             return _cachedJwt;
-        }
-
-        private byte[] ParsePkcs8PrivateKey(string pem)
-        {
-            var base64 = pem
-                .Replace("-----BEGIN PRIVATE KEY-----", "")
-                .Replace("-----END PRIVATE KEY-----", "")
-                .Replace("\n", "").Replace("\r", "").Replace(" ", "");
-            return Convert.FromBase64String(base64);
         }
 
         public async Task<List<AppleStoreReview>> GetReviewsSinceAsync(string appAppleId, DateTime sinceUtc, CancellationToken cancellationToken = default)
@@ -221,7 +211,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             for (int i = 1; i < lines.Length; i++)
             {
                 var columns = lines[i].Split('\t', StringSplitOptions.None);
-                // Ensure we have enough columns for the indices we need
                 if (columns.Length <= Math.Max(dateIndex, Math.Max(appIdIndex, unitsIndex)))
                     continue;
 
@@ -251,8 +240,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                         };
                         metrics[date] = metric;
                     }
-                    // Aggregate Units – we'll treat both Downloads and Installs as total units for now.
-                    // If you need to separate new downloads from updates, use "Product Type Identifier" filter.
                     metric.Downloads += units;
                     metric.Installs += units;
                 }
