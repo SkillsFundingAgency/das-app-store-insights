@@ -1,6 +1,10 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
+using Org.BouncyCastle.OpenSsl;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -50,26 +54,93 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             if (_cachedJwt != null && DateTime.UtcNow < _jwtExpiry)
                 return _cachedJwt;
 
-            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            ecdsa.ImportFromPem(_privateKeyPem);
-
-            var handler = new JwtSecurityTokenHandler();
-            var now = DateTime.UtcNow;
-            var tokenDescriptor = new SecurityTokenDescriptor
+            // Read the private key using BouncyCastle
+            ECPrivateKeyParameters privateKey;
+            using (var reader = new StringReader(_privateKeyPem))
             {
-                Issuer = _issuerId,
-                Audience = "appstoreconnect-v1",
-                Expires = now.AddMinutes(15),
-                IssuedAt = now,
-                NotBefore = now,
-                SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(ecdsa), SecurityAlgorithms.EcdsaSha256)
-            };
-            var token = handler.CreateJwtSecurityToken(tokenDescriptor);
-            token.Header.Add("kid", _keyId);
+                var pemReader = new PemReader(reader);
+                var pemObject = pemReader.ReadObject();
 
-            _cachedJwt = handler.WriteToken(token);
+                if (pemObject is AsymmetricCipherKeyPair keyPair)
+                {
+                    privateKey = (ECPrivateKeyParameters)keyPair.Private;
+                }
+                else if (pemObject is ECPrivateKeyParameters ecPrivate)
+                {
+                    privateKey = ecPrivate;
+                }
+                else
+                {
+                    throw new InvalidOperationException("Unsupported PEM object type.");
+                }
+            }
+
+            // Build JWT header and payload
+            var now = DateTime.UtcNow;
+            var header = new Dictionary<string, object>
+            {
+                { "alg", "ES256" },
+                { "kid", _keyId },
+                { "typ", "JWT" }
+            };
+
+            var payload = new Dictionary<string, object>
+            {
+                { "iss", _issuerId },
+                { "iat", new DateTimeOffset(now).ToUnixTimeSeconds() },
+                { "exp", new DateTimeOffset(now.AddMinutes(15)).ToUnixTimeSeconds() },
+                { "aud", "appstoreconnect-v1" }
+            };
+
+            // Encode header and payload to Base64Url
+            string headerJson = JsonSerializer.Serialize(header);
+            string payloadJson = JsonSerializer.Serialize(payload);
+            string headerBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(headerJson));
+            string payloadBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(payloadJson));
+
+            string message = $"{headerBase64}.{payloadBase64}";
+            byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+
+            // Sign the message using BouncyCastle's ECDsaSigner (ES256 = SHA-256 with ECDSA)
+            var signer = new ECDsaSigner(new Org.BouncyCastle.Crypto.Signers.HMacDsaKCalculator(new Org.BouncyCastle.Crypto.Digests.Sha256Digest()));
+            signer.Init(true, privateKey);
+
+            // Compute SHA-256 hash of the message
+            byte[] hash;
+            using (var sha256 = SHA256.Create())
+            {
+                hash = sha256.ComputeHash(messageBytes);
+            }
+
+            var signature = signer.GenerateSignature(hash);
+            // Convert signature to DER format if needed? Apple expects the raw R|S concatenated (64 bytes for P-256) – but the JWT spec expects DER? Actually Apple's JWT uses the raw concatenated format.
+            // The JWT standard for ES256 uses the raw R and S as big-endian 32-byte each and concatenated.
+            // The BouncyCastle signer returns an array of two BigIntegers. We need to convert to bytes and concatenate.
+            var rBytes = signature[0].ToByteArrayUnsigned();
+            var sBytes = signature[1].ToByteArrayUnsigned();
+
+            // Ensure each is exactly 32 bytes (pad with leading zeros if needed)
+            byte[] rPadded = new byte[32];
+            byte[] sPadded = new byte[32];
+            Array.Copy(rBytes, Math.Max(0, rBytes.Length - 32), rPadded, Math.Max(0, 32 - rBytes.Length), Math.Min(rBytes.Length, 32));
+            Array.Copy(sBytes, Math.Max(0, sBytes.Length - 32), sPadded, Math.Max(0, 32 - sBytes.Length), Math.Min(sBytes.Length, 32));
+
+            byte[] signatureBytes = new byte[64];
+            Array.Copy(rPadded, 0, signatureBytes, 0, 32);
+            Array.Copy(sPadded, 0, signatureBytes, 32, 32);
+
+            string signatureBase64 = Base64UrlEncode(signatureBytes);
+
+            // Assemble the JWT
+            _cachedJwt = $"{headerBase64}.{payloadBase64}.{signatureBase64}";
             _jwtExpiry = now.AddMinutes(15);
             return _cachedJwt;
+        }
+
+        private static string Base64UrlEncode(byte[] bytes)
+        {
+            string base64 = Convert.ToBase64String(bytes);
+            return base64.Replace("+", "-").Replace("/", "_").Replace("=", "");
         }
 
         public async Task<List<AppleStoreReview>> GetReviewsSinceAsync(string appAppleId, DateTime sinceUtc, CancellationToken cancellationToken = default)
