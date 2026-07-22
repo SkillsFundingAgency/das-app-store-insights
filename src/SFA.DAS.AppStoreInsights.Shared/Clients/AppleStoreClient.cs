@@ -1,5 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Metadata.Conventions;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System;
@@ -51,7 +50,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             if (_cachedJwt != null && DateTime.UtcNow < _jwtExpiry)
                 return _cachedJwt;
 
-            using var ecdsa = ECDsa.Create();
+            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             ecdsa.ImportFromPem(_privateKeyPem);
 
             var handler = new JwtSecurityTokenHandler();
