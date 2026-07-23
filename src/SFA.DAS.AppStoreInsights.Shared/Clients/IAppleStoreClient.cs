@@ -24,29 +24,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             DateTime sinceUtc,
             CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Retrieves daily download, install, and usage metrics (Sales & Trends reports).
-        /// Apple typically refreshes metrics once per day (by 6 AM UTC).
-        /// </summary>
-        /// <param name="appAppleId"></param>
-        /// <param name="startDate">Inclusive</param>
-        /// <param name="endDate">Inclusive</param>
-        /// <param name="cancellationToken"></param>
-        /// <returns>List of daily metrics</returns>
-        Task<List<AppleStoreUsageMetric>> GetDailyMetricsAsync(
-            string appAppleId,
-            DateOnly startDate,
-            DateOnly endDate,
-            CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Posts a developer response to an existing customer review.
-        /// Only available for ratings and reviews in the App Store.
-        /// </summary>
-        /// <param name="appAppleId"></param>
-        /// <param name="reviewId">Apple’s unique review identifier (UUID style)</param>
-        /// <param name="responseText">The developer reply (max 1,000 characters)</param>
-        /// <param name="cancellationToken"></param>
         Task PostResponseAsync(
             string appAppleId,
             string reviewId,
@@ -101,17 +78,4 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         public string ResponseId { get; set; } // Apple’s internal ID for the response
     }
 
-    /// <summary>
-    /// Daily download, install, and session metrics from Apple Sales & Trends.
-    /// </summary>
-    [ExcludeFromCodeCoverage]
-    public class AppleStoreUsageMetric
-    {
-        public DateOnly Date { get; set; }
-        public int Downloads { get; set; }      // First‑time downloads (units)
-        public int Installs { get; set; }       // Total installations (including redownloads)
-        public int Uninstalls { get; set; }     // Not directly available; set to 0 or omit
-        public int Sessions { get; set; }       // Number of app launches
-        public int DailyActiveDevices { get; set; }
-    }
 }
