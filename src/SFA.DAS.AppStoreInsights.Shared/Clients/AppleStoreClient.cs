@@ -49,27 +49,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
             _logger.LogInformation("AppleStoreClient initialized with BaseAddress: {BaseAddress}", _httpClient.BaseAddress);
-
-            // Fire-and-forget connectivity test – logs result on startup
-            _ = Task.Run(async () => await TestConnectivityAsync());
-        }
-
-        public async Task<bool> TestConnectivityAsync()
-        {
-            try
-            {
-                _logger.LogInformation("Testing outbound internet connectivity to https://www.google.com");
-                using var client = new HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
-                var response = await client.GetAsync("https://www.google.com", HttpCompletionOption.ResponseHeadersRead);
-                _logger.LogInformation("Connectivity test successful. Status code: {StatusCode}", response.StatusCode);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Connectivity test failed to reach https://www.google.com");
-                return false;
-            }
         }
 
         private async Task<string> GetJwtTokenAsync()
