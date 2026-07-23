@@ -49,8 +49,7 @@ public partial class Program
                 s.AddHttpClient<IAppleStoreClient, AppleStoreClient>()
                     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                     {
-                        SslProtocols = SslProtocols.Tls12,
-                        ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
+                        SslProtocols = SslProtocols.Tls12
                     });
 
                 s.AddSingleton<IGooglePlayClient, GooglePlayClient>();

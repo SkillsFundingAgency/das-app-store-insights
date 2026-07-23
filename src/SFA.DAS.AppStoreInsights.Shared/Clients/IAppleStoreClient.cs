@@ -52,6 +52,12 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             string reviewId,
             string responseText,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Tests outbound internet connectivity to https://www.google.com.
+        /// This method is called automatically on client initialization.
+        /// </summary>
+        Task<bool> TestConnectivityAsync();
     }
 
     // ========== Models ==========

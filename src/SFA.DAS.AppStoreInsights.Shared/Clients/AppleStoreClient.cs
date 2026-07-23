@@ -47,14 +47,41 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
 
             _httpClient.BaseAddress = new Uri("https://api.appstoreconnect.apple.com/v1/");
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            _logger.LogInformation("AppleStoreClient initialized with BaseAddress: {BaseAddress}", _httpClient.BaseAddress);
+
+            // Fire-and-forget connectivity test – logs result on startup
+            _ = Task.Run(async () => await TestConnectivityAsync());
+        }
+
+        public async Task<bool> TestConnectivityAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Testing outbound internet connectivity to https://www.google.com");
+                using var client = new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(10);
+                var response = await client.GetAsync("https://www.google.com", HttpCompletionOption.ResponseHeadersRead);
+                _logger.LogInformation("Connectivity test successful. Status code: {StatusCode}", response.StatusCode);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Connectivity test failed to reach https://www.google.com");
+                return false;
+            }
         }
 
         private async Task<string> GetJwtTokenAsync()
         {
             if (_cachedJwt != null && DateTime.UtcNow < _jwtExpiry)
+            {
+                _logger.LogDebug("Using cached JWT");
                 return _cachedJwt;
+            }
 
-            // Read the private key using BouncyCastle
+            _logger.LogInformation("Generating new JWT token for Apple API");
+
             ECPrivateKeyParameters privateKey;
             using (var reader = new StringReader(_privateKeyPem))
             {
@@ -75,7 +102,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 }
             }
 
-            // Build JWT header and payload
             var now = DateTime.UtcNow;
             var header = new Dictionary<string, object>
             {
@@ -92,7 +118,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 { "aud", "appstoreconnect-v1" }
             };
 
-            // Encode header and payload to Base64Url
             string headerJson = JsonSerializer.Serialize(header);
             string payloadJson = JsonSerializer.Serialize(payload);
             string headerBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(headerJson));
@@ -101,11 +126,9 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             string message = $"{headerBase64}.{payloadBase64}";
             byte[] messageBytes = Encoding.UTF8.GetBytes(message);
 
-            // Sign the message using BouncyCastle's ECDsaSigner (ES256 = SHA-256 with ECDSA)
             var signer = new ECDsaSigner(new Org.BouncyCastle.Crypto.Signers.HMacDsaKCalculator(new Org.BouncyCastle.Crypto.Digests.Sha256Digest()));
             signer.Init(true, privateKey);
 
-            // Compute SHA-256 hash of the message
             byte[] hash;
             using (var sha256 = SHA256.Create())
             {
@@ -113,13 +136,9 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             }
 
             var signature = signer.GenerateSignature(hash);
-            // Convert signature to DER format if needed? Apple expects the raw R|S concatenated (64 bytes for P-256) – but the JWT spec expects DER? Actually Apple's JWT uses the raw concatenated format.
-            // The JWT standard for ES256 uses the raw R and S as big-endian 32-byte each and concatenated.
-            // The BouncyCastle signer returns an array of two BigIntegers. We need to convert to bytes and concatenate.
             var rBytes = signature[0].ToByteArrayUnsigned();
             var sBytes = signature[1].ToByteArrayUnsigned();
 
-            // Ensure each is exactly 32 bytes (pad with leading zeros if needed)
             byte[] rPadded = new byte[32];
             byte[] sPadded = new byte[32];
             Array.Copy(rBytes, Math.Max(0, rBytes.Length - 32), rPadded, Math.Max(0, 32 - rBytes.Length), Math.Min(rBytes.Length, 32));
@@ -131,9 +150,10 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
 
             string signatureBase64 = Base64UrlEncode(signatureBytes);
 
-            // Assemble the JWT
             _cachedJwt = $"{headerBase64}.{payloadBase64}.{signatureBase64}";
             _jwtExpiry = now.AddMinutes(15);
+
+            _logger.LogInformation("JWT token generated successfully. Expires at {Expiry}", _jwtExpiry);
             return _cachedJwt;
         }
 
@@ -145,123 +165,144 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
 
         public async Task<List<AppleStoreReview>> GetReviewsSinceAsync(string appAppleId, DateTime sinceUtc, CancellationToken cancellationToken = default)
         {
-            var token = await GetJwtTokenAsync();
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            _logger.LogInformation("GetReviewsSinceAsync called for AppId: {AppAppleId}, since: {SinceUtc}", appAppleId, sinceUtc);
 
-            var url = $"apps/{appAppleId}/customerReviews?limit=200&sort=-createdDate";
-            _logger.LogDebug("Apple reviews URL: {Url}", url);
-
-            var allReviews = new List<AppleStoreReview>();
-            bool shouldStop = false;
-
-            while (!string.IsNullOrEmpty(url) && !shouldStop)
+            try
             {
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync(url, cancellationToken));
+                var token = await GetJwtTokenAsync();
+                _logger.LogDebug("JWT token obtained, setting authorization header");
 
-                if (!response.IsSuccessStatusCode)
+                _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                var url = $"apps/{appAppleId}/customerReviews?limit=200&sort=-createdDate";
+                _logger.LogInformation("Calling Apple API: {Url}", url);
+
+                var allReviews = new List<AppleStoreReview>();
+                bool shouldStop = false;
+
+                while (!string.IsNullOrEmpty(url) && !shouldStop)
                 {
-                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    _logger.LogError("Apple API request failed: {StatusCode} - {Error}", response.StatusCode, errorBody);
-                    response.EnsureSuccessStatusCode();
-                }
+                    _logger.LogDebug("Fetching page: {Url}", url);
+                    var response = await SendWithRetryAsync(() => _httpClient.GetAsync(url, cancellationToken));
 
-                var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                var parsed = JsonSerializer.Deserialize<AppleReviewsResponse>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                if (parsed?.Data != null)
-                {
-                    foreach (var item in parsed.Data)
+                    if (!response.IsSuccessStatusCode)
                     {
-                        var reviewDate = item.Attributes?.CreatedDate ?? DateTime.UtcNow;
+                        var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                        _logger.LogError("Apple API request failed: {StatusCode} - {Error}", response.StatusCode, errorBody);
+                        response.EnsureSuccessStatusCode();
+                    }
 
-                        if (reviewDate < sinceUtc)
+                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var parsed = JsonSerializer.Deserialize<AppleReviewsResponse>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                    if (parsed?.Data != null)
+                    {
+                        foreach (var item in parsed.Data)
                         {
-                            shouldStop = true;
-                            break;
+                            var reviewDate = item.Attributes?.CreatedDate ?? DateTime.UtcNow;
+
+                            if (reviewDate < sinceUtc)
+                            {
+                                shouldStop = true;
+                                break;
+                            }
+
+                            var review = new AppleStoreReview
+                            {
+                                ReviewId = item.Id,
+                                ReviewerName = item.Attributes?.ReviewerNickname ?? "Anonymous",
+                                Rating = item.Attributes?.Rating ?? 0,
+                                Title = item.Attributes?.Title ?? "",
+                                Comment = item.Attributes?.Body ?? "",
+                                ReviewDateUtc = reviewDate,
+                                LastModifiedUtc = item.Attributes?.LastModifiedDate ?? reviewDate,
+                                DeviceInfo = $"{item.Attributes?.DeviceType} / {item.Attributes?.OsVersion}",
+                                DeveloperReply = item.Attributes?.DeveloperResponse != null
+                                    ? new AppleStoreDeveloperReply
+                                    {
+                                        ResponseText = item.Attributes.DeveloperResponse.ResponseBody,
+                                        ResponseDateUtc = item.Attributes.DeveloperResponse.LastModifiedDate,
+                                        ResponseId = item.Id
+                                    }
+                                    : null
+                            };
+                            allReviews.Add(review);
                         }
+                    }
 
-                        var review = new AppleStoreReview
-                        {
-                            ReviewId = item.Id,
-                            ReviewerName = item.Attributes?.ReviewerNickname ?? "Anonymous",
-                            Rating = item.Attributes?.Rating ?? 0,
-                            Title = item.Attributes?.Title ?? "",
-                            Comment = item.Attributes?.Body ?? "",
-                            ReviewDateUtc = reviewDate,
-                            LastModifiedUtc = item.Attributes?.LastModifiedDate ?? reviewDate,
-                            DeviceInfo = $"{item.Attributes?.DeviceType} / {item.Attributes?.OsVersion}",
-                            DeveloperReply = item.Attributes?.DeveloperResponse != null
-                                ? new AppleStoreDeveloperReply
-                                {
-                                    ResponseText = item.Attributes.DeveloperResponse.ResponseBody,
-                                    ResponseDateUtc = item.Attributes.DeveloperResponse.LastModifiedDate,
-                                    ResponseId = item.Id
-                                }
-                                : null
-                        };
-                        allReviews.Add(review);
+                    if (!shouldStop)
+                    {
+                        url = parsed?.Links?.Next;
+                        if (!string.IsNullOrEmpty(url) && !url.StartsWith("https"))
+                            url = $"https://api.appstoreconnect.apple.com/v1/{url}";
+                    }
+                    else
+                    {
+                        url = null;
                     }
                 }
 
-                if (!shouldStop)
-                {
-                    url = parsed?.Links?.Next;
-                    if (!string.IsNullOrEmpty(url) && !url.StartsWith("https"))
-                        url = $"https://api.appstoreconnect.apple.com/v1/{url}";
-                }
-                else
-                {
-                    url = null;
-                }
+                _logger.LogInformation("Retrieved {Count} Apple reviews since {Since}", allReviews.Count, sinceUtc);
+                return allReviews;
             }
-
-            _logger.LogInformation("Retrieved {Count} Apple reviews since {Since}", allReviews.Count, sinceUtc);
-            return allReviews;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetReviewsSinceAsync for AppId: {AppAppleId}", appAppleId);
+                throw;
+            }
         }
 
         public async Task<List<AppleStoreUsageMetric>> GetDailyMetricsAsync(string appAppleId, DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Fetching Apple Sales & Trends report for {Start} to {End}", startDate, endDate);
 
-            var token = await GetJwtTokenAsync();
-            var allMetrics = new List<AppleStoreUsageMetric>();
-            var currentDate = startDate;
-
-            while (currentDate <= endDate)
+            try
             {
-                var dateStr = currentDate.ToString("yyyy-MM-dd");
-                var query = $"salesReports?filter[reportType]=SALES&filter[reportSubType]=SUMMARY&filter[vendorNumber]={Uri.EscapeDataString(_vendorNumber)}&filter[reportDate]={dateStr}&filter[frequency]=DAILY";
+                var token = await GetJwtTokenAsync();
+                var allMetrics = new List<AppleStoreUsageMetric>();
+                var currentDate = startDate;
 
-                _logger.LogDebug("Fetching report for {Date}: {Query}", currentDate, query);
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, query);
-                request.Headers.Accept.Clear();
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/a-gzip"));
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-                var response = await SendWithRetryAsync(() => _httpClient.SendAsync(request, cancellationToken));
-
-                if (!response.IsSuccessStatusCode)
+                while (currentDate <= endDate)
                 {
-                    var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                    _logger.LogWarning("Failed to get report for {Date}: {StatusCode} - {Error}", currentDate, response.StatusCode, error);
+                    var dateStr = currentDate.ToString("yyyy-MM-dd");
+                    var query = $"salesReports?filter[reportType]=SALES&filter[reportSubType]=SUMMARY&filter[vendorNumber]={Uri.EscapeDataString(_vendorNumber)}&filter[reportDate]={dateStr}&filter[frequency]=DAILY";
+
+                    _logger.LogDebug("Fetching report for {Date}: {Query}", currentDate, query);
+
+                    using var request = new HttpRequestMessage(HttpMethod.Get, query);
+                    request.Headers.Accept.Clear();
+                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/a-gzip"));
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                    var response = await SendWithRetryAsync(() => _httpClient.SendAsync(request, cancellationToken));
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                        _logger.LogWarning("Failed to get report for {Date}: {StatusCode} - {Error}", currentDate, response.StatusCode, error);
+                        currentDate = currentDate.AddDays(1);
+                        continue;
+                    }
+
+                    await using var compressedStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                    using var decompressor = new GZipStream(compressedStream, CompressionMode.Decompress);
+                    using var reader = new StreamReader(decompressor, Encoding.UTF8);
+                    var tsvContent = await reader.ReadToEndAsync(cancellationToken);
+
+                    var dailyMetrics = ParseSalesReportTsv(tsvContent, currentDate, currentDate, appAppleId);
+                    allMetrics.AddRange(dailyMetrics);
+
                     currentDate = currentDate.AddDays(1);
-                    continue;
                 }
 
-                await using var compressedStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var decompressor = new GZipStream(compressedStream, CompressionMode.Decompress);
-                using var reader = new StreamReader(decompressor, Encoding.UTF8);
-                var tsvContent = await reader.ReadToEndAsync(cancellationToken);
-
-                var dailyMetrics = ParseSalesReportTsv(tsvContent, currentDate, currentDate, appAppleId);
-                allMetrics.AddRange(dailyMetrics);
-
-                currentDate = currentDate.AddDays(1);
+                _logger.LogInformation("Fetched {Count} daily metrics from Apple", allMetrics.Count);
+                return allMetrics;
             }
-
-            _logger.LogInformation("Fetched {Count} daily metrics from Apple", allMetrics.Count);
-            return allMetrics;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetDailyMetricsAsync for AppId: {AppAppleId}", appAppleId);
+                throw;
+            }
         }
 
         private List<AppleStoreUsageMetric> ParseSalesReportTsv(string tsvContent, DateOnly startDate, DateOnly endDate, string appAppleId)
