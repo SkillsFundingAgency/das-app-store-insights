@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<AzureFunctionsVersion>v4</AzureFunctionsVersion>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<_FunctionsSkipCleanOutput>true</_FunctionsSkipCleanOutput>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<FunctionsExtensionsMetadataGenEnabled>false</FunctionsExtensionsMetadataGenEnabled>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Content Include="local.settings.json" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.50.0" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.5" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.2.0" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.0" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.22.0" />
+		<PackageReference Include="Azure.Identity" Version="1.17.1" />
+		<PackageReference Include="Microsoft.Identity.Client" Version="4.80.0" />
+		<PackageReference Include="RestEase" Version="1.6.4" />
+		<PackageReference Include="RestEase.HttpClientFactory" Version="1.6.4" />
+		<PackageReference Include="SFA.DAS.Api.Common" Version="17.1.88" />
+		<PackageReference Include="SFA.DAS.Configuration.AzureTableStorage" Version="3.0.84" />
+		<PackageReference Include="SFA.DAS.Http" Version="3.2.69" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="host.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="System.Threading.ExecutionContext" Alias="ExecutionContext" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\SFA.DAS.AppStoreInsights.Shared\SFA.DAS.AppStoreInsights.Shared.csproj" />
+	</ItemGroup>
+
+</Project>

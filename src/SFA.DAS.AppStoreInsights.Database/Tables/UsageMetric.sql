@@ -4,10 +4,7 @@ CREATE TABLE [dbo].[UsageMetric] (
     [VendorId]    TINYINT       NOT NULL REFERENCES [dbo].[Vendor](Id),
     [MetricDate]  DATE          NOT NULL,
     [Downloads]   INT           NOT NULL DEFAULT 0,
-    [Installs]    INT           NOT NULL DEFAULT 0,
-    [Uninstalls]  INT           NULL,
-    [Sessions]    INT           NULL,
-    [RawDataJson] NVARCHAR(MAX) NULL,
+    [ActiveUsers] INT           NULL,
     [CreatedAt]   DATETIME2     DEFAULT GETUTCDATE(),
     CONSTRAINT UQ_UsageMetric UNIQUE (AppId, VendorId, MetricDate)
 );
