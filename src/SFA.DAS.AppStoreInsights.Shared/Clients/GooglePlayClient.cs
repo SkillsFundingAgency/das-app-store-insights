@@ -146,7 +146,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                     stream.Position = 0;
 
                     using var reader = new StreamReader(stream, Encoding.UTF8);
-                    var csvContent = await reader.ReadToEndAsync();
+                    var csvContent = await reader.ReadToEndAsync(cancellationToken);
 
                     var lines = csvContent.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
                     if (lines.Length < 2)
