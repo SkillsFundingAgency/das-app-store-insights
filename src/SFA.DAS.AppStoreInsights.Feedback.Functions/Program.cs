@@ -6,6 +6,8 @@ using SFA.DAS.AppStoreInsights.Feedback.Functions.Extensions;
 using SFA.DAS.AppStoreInsights.Shared.Extensions;
 using System.Diagnostics.CodeAnalysis;
 
+namespace SFA.DAS.AppStoreInsights.Feedback.Functions;
+
 [ExcludeFromCodeCoverage]
 public partial class Program
 {

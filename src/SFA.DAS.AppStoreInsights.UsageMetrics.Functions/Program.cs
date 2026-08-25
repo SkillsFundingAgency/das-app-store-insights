@@ -4,7 +4,9 @@ using Microsoft.Extensions.Hosting;
 using SFA.DAS.AppStoreInsights.Functions.UsageMetrics.Configuration;
 using SFA.DAS.AppStoreInsights.Functions.UsageMetrics.Extensions;
 using SFA.DAS.AppStoreInsights.Shared.Extensions;
-using System.Diagnostics.CodeAnalysis; 
+using System.Diagnostics.CodeAnalysis;
+
+namespace SFA.DAS.AppStoreInsights.Functions.UsageMetrics;
 
 [ExcludeFromCodeCoverage]
 public partial class Program
