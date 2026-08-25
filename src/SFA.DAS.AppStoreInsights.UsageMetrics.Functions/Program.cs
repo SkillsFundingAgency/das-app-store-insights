@@ -13,19 +13,15 @@ public partial class Program
 {
     public static async Task Main(string[] args)
     {
-        var host = new HostBuilder()
-            .ConfigureFunctionsWorkerDefaults()
-            .ConfigureAppConfiguration(builder => builder.AddConfiguration())
-            .ConfigureServices((context, s) =>
+        await new HostBuilder()
+            .AddAppStoreInsightsHost((context, services) =>
             {
-                s
+                services
                     .AddOptions()
                     .Configure<ApplicationConfiguration>(context.Configuration.GetSection(nameof(ApplicationConfiguration)))
-                    .AddApplicationRegistrations()
-                    .AddAppStoreInsightsServices(context.Configuration);
+                    .AddApplicationRegistrations();
             })
-            .Build();
-
-        await host.RunAsync();
+            .Build()
+            .RunAsync();
     }
 }
