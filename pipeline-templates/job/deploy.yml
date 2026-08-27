@@ -62,10 +62,10 @@ jobs:
         - template: azure-pipelines-templates/deploy/step/function-deploy.yml@das-platform-building-blocks
           parameters:
             ServiceConnection: ${{ parameters.ServiceConnection }}
-            FunctionAppName: $(FunctionAppName)
+            FunctionAppName: $(FeedbackFunctionAppName)
             DeploymentPackagePath: $(Pipeline.Workspace)/${{ parameters.SolutionBaseName }}/${{ parameters.SolutionBaseName }}.Feedback.Functions.zip
         - template: azure-pipelines-templates/deploy/step/function-deploy.yml@das-platform-building-blocks
           parameters:
             ServiceConnection: ${{ parameters.ServiceConnection }}
-            FunctionAppName: $(UsageMetricsFunctionAppName)
+            FunctionAppName: $(MetricsFunctionAppName)
             DeploymentPackagePath: $(Pipeline.Workspace)/${{ parameters.SolutionBaseName }}/${{ parameters.SolutionBaseName }}.UsageMetrics.Functions.zip
