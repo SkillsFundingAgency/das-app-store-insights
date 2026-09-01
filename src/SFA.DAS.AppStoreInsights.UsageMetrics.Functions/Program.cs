@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SFA.DAS.AppStoreInsights.Feedback.Functions.Configuration;
-using SFA.DAS.AppStoreInsights.Feedback.Functions.Extensions;
+using SFA.DAS.AppStoreInsights.Functions.UsageMetrics.Configuration;
+using SFA.DAS.AppStoreInsights.Functions.UsageMetrics.Extensions;
 using SFA.DAS.AppStoreInsights.Shared.Extensions;
 using System.Diagnostics.CodeAnalysis;
 
-namespace SFA.DAS.AppStoreInsights.Feedback.Functions;
+namespace SFA.DAS.AppStoreInsights.Functions.UsageMetrics;
 
 [ExcludeFromCodeCoverage]
 public partial class Program

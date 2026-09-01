@@ -44,13 +44,12 @@ namespace SFA.DAS.AppStoreInsights.Shared.UnitTests
                 VendorId = 1,
                 MetricDate = DateTime.UtcNow,
                 Downloads = 100,
-                Installs = 80,
-                Uninstalls = 5,
-                Sessions = 500,
+                ActiveUsers = 80,
                 RawDataJson = "{}"
             };
             metric.AppId.Should().Be(1);
             metric.Downloads.Should().Be(100);
+            metric.ActiveUsers.Should().Be(80);
         }
     }
     #endregion

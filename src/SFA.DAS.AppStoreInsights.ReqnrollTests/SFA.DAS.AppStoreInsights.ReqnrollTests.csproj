@@ -19,6 +19,7 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.50.0" />
     
     <ProjectReference Include="..\SFA.DAS.AppStoreInsights.Feedback.Functions\SFA.DAS.AppStoreInsights.Feedback.Functions.csproj" />
+    <ProjectReference Include="..\SFA.DAS.AppStoreInsights.UsageMetrics.Functions\SFA.DAS.AppStoreInsights.UsageMetrics.Functions.csproj" />
     <ProjectReference Include="..\SFA.DAS.AppStoreInsights.Shared\SFA.DAS.AppStoreInsights.Shared.csproj" />
   </ItemGroup>
 </Project>

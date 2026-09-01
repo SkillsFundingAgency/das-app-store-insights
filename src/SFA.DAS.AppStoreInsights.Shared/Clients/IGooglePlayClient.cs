@@ -23,6 +23,28 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             DateTime sinceUtc,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Retrieves daily download/install metrics for a date range.
+        /// Google Play metrics can be delayed by up to 1 week – typically refreshed every 3 days.
+        /// </summary>
+        /// <param name="appPackageName"></param>
+        /// <param name="startDate">Inclusive</param>
+        /// <param name="endDate">Inclusive</param>
+        /// <param name="cancellationToken"></param>
+        /// <returns>List of daily metrics</returns>
+        Task<List<GooglePlayUsageMetric>> GetDailyMetricsAsync(
+            string appPackageName,
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Posts a developer reply to an existing user review.
+        /// </summary>
+        /// <param name="appPackageName"></param>
+        /// <param name="reviewId">Google’s unique review identifier</param>
+        /// <param name="replyText">The response text (max 350 characters)</param>
+        /// <param name="cancellationToken"></param>
         Task PostResponseAsync(
             string appPackageName,
             string reviewId,
@@ -77,4 +99,18 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         public string ReplyId { get; set; }   // Google’s internal id for the reply
     }
 
+    /// <summary>
+    /// Daily download/install statistics from Google Play Console.
+    /// </summary>
+    [ExcludeFromCodeCoverage]
+    public class GooglePlayUsageMetric
+    {
+        public DateOnly Date { get; set; }
+        public int Downloads { get; set; }       // First-time downloads
+        public int Installs { get; set; }        // Total installs (including updates)
+        public int Uninstalls { get; set; }      // Device uninstalls
+        public int DailyActiveUsers { get; set; } // Optional – useful for dashboards
+        public int Sessions { get; set; }         // Number of app opens
+        public string RawDataJson { get; set; }   
+    }
 }

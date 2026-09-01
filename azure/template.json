@@ -101,11 +101,13 @@
         "deploymentUrlBase": "https://raw.githubusercontent.com/SkillsFundingAgency/das-platform-building-blocks/master/templates/",
         "resourceNamePrefix": "[toLower(concat('das-', parameters('resourceEnvironmentName'),'-', parameters('serviceName')))]",
         "resourceGroupName": "[concat(variables('resourceNamePrefix'), '-rg')]",
-        "functionAppName": "[concat(variables('resourceNamePrefix'), '-fa')]",
+        "FeedbackFunctionAppName": "[concat(variables('resourceNamePrefix'), '-fa')]",
+        "MetricsFunctionAppName": "[concat(variables('resourceNamePrefix'), '-metrics-fa')]",
         "appServicePlanName": "[concat(variables('resourceNamePrefix'), '-asp')]",
         "databaseName": "[concat(variables('resourceNamePrefix'), '-db')]",
         "privateLinkScopeName": "[toLower(concat('das-', parameters('resourceEnvironmentName'),'-shared-ampls'))]",
-        "configNames": "SFA.DAS.AppStoreInsights.Feedback.Functions",
+        "feedbackConfigNames": "SFA.DAS.AppStoreInsights.Feedback.Functions",
+        "metricsConfigNames": "SFA.DAS.AppStoreInsights.UsageMetrics.Functions",
         "routeTableId": {
             "id": "[resourceId(subscription().subscriptionId, parameters('sharedEnvResourceGroup'), 'Microsoft.Network/routeTables', parameters('SharedRouteTableName'))]"
         },
@@ -185,7 +187,7 @@
         },
         {
             "apiVersion": "2021-04-01",
-            "name": "[concat(variables('functionAppName'), '-application-insights-', parameters('utcValue'))]",
+            "name": "[concat(variables('FeedbackFunctionAppName'), '-application-insights-', parameters('utcValue'))]",
             "type": "Microsoft.Resources/deployments",
             "resourceGroup": "[variables('resourceGroupName')]",
             "properties": {
@@ -196,10 +198,10 @@
                 },
                 "parameters": {
                     "appInsightsName": {
-                        "value": "[variables('functionAppName')]"
+                        "value": "[variables('FeedbackFunctionAppName')]"
                     },
                     "attachedService": {
-                        "value": "[variables('functionAppName')]"
+                        "value": "[variables('FeedbackFunctionAppName')]"
                     },
                     "logAnalyticsWorkspaceId": {
                         "value": "[resourceId(parameters('logAnalyticsSubscriptionId'),parameters('sharedManagementResourceGroup'),'Microsoft.OperationalInsights/workspaces',parameters('logAnalyticsWorkspaceName'))]"
@@ -213,7 +215,7 @@
         {
             "condition": "[parameters('deployPrivateLinkedScopedResource')]",
             "apiVersion": "2021-04-01",
-            "name": "[concat(variables('functionAppName'), '-private-link-scoped-', parameters('utcValue'))]",
+            "name": "[concat(variables('FeedbackFunctionAppName'), '-private-link-scoped-', parameters('utcValue'))]",
             "type": "Microsoft.Resources/deployments",
             "resourceGroup": "[parameters('sharedEnvResourceGroup')]",
             "properties": {
@@ -227,17 +229,17 @@
                         "value": "[variables('privateLinkScopeName')]"
                     },
                     "scopedResourceName": {
-                        "value": "[variables('functionAppName')]"
+                        "value": "[variables('FeedbackFunctionAppName')]"
                     },
                     "scopedResourceId": {
-                        "value": "[reference(concat(variables('functionAppName'), '-application-insights-', parameters('utcValue'))).outputs.AppInsightsResourceId.value]"
+                        "value": "[reference(concat(variables('FeedbackFunctionAppName'), '-application-insights-', parameters('utcValue'))).outputs.AppInsightsResourceId.value]"
                     }
                 }
             }
         },
         {
             "apiVersion": "2021-04-01",
-            "name": "[concat(variables('functionAppName'), '-', parameters('utcValue'))]",
+            "name": "[concat(variables('FeedbackFunctionAppName'), '-', parameters('utcValue'))]",
             "type": "Microsoft.Resources/deployments",
             "resourceGroup": "[variables('resourceGroupName')]",
             "properties": {
@@ -248,7 +250,7 @@
                 },
                 "parameters": {
                     "functionAppName": {
-                        "value": "[variables('functionAppName')]"
+                        "value": "[variables('FeedbackFunctionAppName')]"
                     },
                     "appServicePlanName": {
                         "value": "[variables('appServicePlanName')]"
@@ -267,7 +269,7 @@
                             "array": [
                                 {
                                     "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-                                    "value": "[reference(concat(variables('functionAppName'), '-application-insights-', parameters('utcValue'))).outputs.ConnectionString.value]"
+                                    "value": "[reference(concat(variables('FeedbackFunctionAppName'), '-application-insights-', parameters('utcValue'))).outputs.ConnectionString.value]"
                                 },
                                 {
                                     "name": "AzureWebJobsStorage",
@@ -275,7 +277,7 @@
                                 },
                                 {
                                     "name": "ConfigNames",
-                                    "value": "[variables('configNames')]"
+                                    "value": "[variables('feedbackConfigNames')]"
                                 },
                                 {
                                     "name": "ConfigurationStorageConnectionString",
@@ -323,7 +325,7 @@
         },
         {
             "apiVersion": "2022-09-01",
-            "name": "[concat(variables('functionAppName'), '-cors-policies-', parameters('utcValue'))]",
+            "name": "[concat(variables('FeedbackFunctionAppName'), '-cors-policies-', parameters('utcValue'))]",
             "type": "Microsoft.Resources/deployments",
             "resourceGroup": "[variables('resourceGroupName')]",
             "properties": {
@@ -334,12 +336,171 @@
                 },
                 "parameters": {
                     "functionAppName": {
-                        "value": "[variables('functionAppName')]"
+                        "value": "[variables('FeedbackFunctionAppName')]"
                     }
                 }
             },
             "dependsOn": [
-                "[concat(variables('functionAppName'), '-', parameters('utcValue'))]"
+                "[concat(variables('FeedbackFunctionAppName'), '-', parameters('utcValue'))]"
+            ]
+        },
+        {
+            "apiVersion": "2021-04-01",
+            "name": "[concat(variables('MetricsFunctionAppName'), '-application-insights-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'application-insights.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "appInsightsName": {
+                        "value": "[variables('MetricsFunctionAppName')]"
+                    },
+                    "attachedService": {
+                        "value": "[variables('MetricsFunctionAppName')]"
+                    },
+                    "logAnalyticsWorkspaceId": {
+                        "value": "[resourceId(parameters('logAnalyticsSubscriptionId'),parameters('sharedManagementResourceGroup'),'Microsoft.OperationalInsights/workspaces',parameters('logAnalyticsWorkspaceName'))]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[variables('resourceGroupName')]"
+            ]
+        },
+        {
+            "condition": "[parameters('deployPrivateLinkedScopedResource')]",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(variables('MetricsFunctionAppName'), '-private-link-scoped-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[parameters('sharedEnvResourceGroup')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'private-linked-scoped-resource.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "privateLinkScopeName": {
+                        "value": "[variables('privateLinkScopeName')]"
+                    },
+                    "scopedResourceName": {
+                        "value": "[variables('MetricsFunctionAppName')]"
+                    },
+                    "scopedResourceId": {
+                        "value": "[reference(concat(variables('MetricsFunctionAppName'), '-application-insights-', parameters('utcValue'))).outputs.AppInsightsResourceId.value]"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "2021-04-01",
+            "name": "[concat(variables('MetricsFunctionAppName'), '-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'function-app-v2.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "functionAppName": {
+                        "value": "[variables('MetricsFunctionAppName')]"
+                    },
+                    "appServicePlanName": {
+                        "value": "[variables('appServicePlanName')]"
+                    },
+                    "appServicePlanResourceGroup": {
+                        "value": "[variables('resourceGroupName')]"
+                    },
+                    "netFrameworkVersion": {
+                        "value": "v10.0"
+                    },
+                    "subnetResourceId": {
+                        "value": "[reference(concat(parameters('subnetObject').name, '-', parameters('utcValue'))).outputs.SubnetResourceId.value]"
+                    },
+                    "functionAppAppSettings": {
+                        "value": {
+                            "array": [
+                                {
+                                    "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                    "value": "[reference(concat(variables('MetricsFunctionAppName'), '-application-insights-', parameters('utcValue'))).outputs.ConnectionString.value]"
+                                },
+                                {
+                                    "name": "AzureWebJobsStorage",
+                                    "value": "[parameters('sharedStorageAccountConnectionString')]"
+                                },
+                                {
+                                    "name": "ConfigNames",
+                                    "value": "[variables('metricsConfigNames')]"
+                                },
+                                {
+                                    "name": "ConfigurationStorageConnectionString",
+                                    "value": "[parameters('configurationStorageConnectionString')]"
+                                },
+                                {
+                                    "name": "EnvironmentName",
+                                    "value": "[parameters('environmentName')]"
+                                },
+                                {
+                                    "name": "FUNCTIONS_EXTENSION_VERSION",
+                                    "value": "~4"
+                                },
+                                {
+                                    "name": "FUNCTIONS_WORKER_RUNTIME",
+                                    "value": "dotnet-isolated"
+                                },
+                                {
+                                    "name": "SqlConnectionString",
+                                    "value": "[parameters('SqlConnectionString')]"
+                                },
+                                {
+                                    "name": "WEBSITE_RUN_FROM_PACKAGE",
+                                    "value": "1"
+                                },
+                                {
+                                    "name": "Version",
+                                    "value": "1.0"
+                                }
+                            ]
+                        }
+                    },
+                    "ipSecurityRestrictions": {
+                        "value": "[parameters('workerAccessRestrictions')]"
+                    },
+                    "vnetRouteAllEnabled": {
+                        "value": "[parameters('vnetRouteAllEnabled')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[variables('resourceGroupName')]",
+                "[concat(variables('appServicePlanName'), '-', parameters('utcValue'))]"
+            ]
+        },
+        {
+            "apiVersion": "2022-09-01",
+            "name": "[concat(variables('MetricsFunctionAppName'), '-cors-policies-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'cors-policy.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "functionAppName": {
+                        "value": "[variables('MetricsFunctionAppName')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('MetricsFunctionAppName'), '-', parameters('utcValue'))]"
             ]
         },
         {
@@ -410,7 +571,11 @@
         },
         "FunctionAppName": {
             "type": "string",
-            "value": "[variables('functionAppName')]"
+            "value": "[variables('FeedbackFunctionAppName')]"
+        },
+        "UsageMetricsFunctionAppName": {
+            "type": "string",
+            "value": "[variables('MetricsFunctionAppName')]"
         },
         "DatabaseName": {
             "type": "string",

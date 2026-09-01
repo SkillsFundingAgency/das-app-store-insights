@@ -1,6 +1,5 @@
 ﻿using Dapper;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
 using SFA.DAS.AppStoreInsights.Shared.Models;
 using SFA.DAS.AppStoreInsights.Shared.Infrastructure;
 using System;
@@ -17,8 +16,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
         Task<int> GetAppIdAsync(string appName, CancellationToken ct);
         Task<bool> ReviewExistsAsync(byte vendorId, string externalId, CancellationToken ct);
         Task InsertReviewAsync(Review review, CancellationToken ct);
-        Task<IEnumerable<Review>> GetUnprocessedNegativeReviewsAsync(int appId, CancellationToken ct);
-        Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct);
+        Task InsertUsageMetricAsync(UsageMetric metric, CancellationToken ct);
     }
 
     [ExcludeFromCodeCoverage]
@@ -67,38 +65,26 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
                 new CommandDefinition(sql, review, cancellationToken: ct));
         }
 
-        public async Task<IEnumerable<Review>> GetUnprocessedNegativeReviewsAsync(int appId, CancellationToken ct)
+        public async Task InsertUsageMetricAsync(UsageMetric metric, CancellationToken ct)
         {
             const string sql = @"
-                SELECT Id, AppId, VendorId, ExternalId, ReviewerName, Rating, Title, Comment, ReviewDate, DeviceInfo, IsNegative, ZendeskTicketId
-                FROM [dbo].[Review] 
-                WHERE AppId = @appId 
-                    AND IsNegative = 1 
-                    AND (ZendeskTicketId IS NULL OR ZendeskTicketId = '')
-                    AND ProcessedAt IS NULL
-                ORDER BY ReviewDate DESC";
-
-            using var conn = _connectionFactory.CreateConnection(_connectionString);
-            return await conn.QueryAsync<Review>(
-                new CommandDefinition(sql, new { appId }, cancellationToken: ct));
-        }
-
-        public async Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct)
-        {
-            const string sql = @"
-                    INSERT INTO [dbo].[Response] (ReviewId, ResponderType, ResponseText, ResponseDate, CreatedAt)
-                    VALUES (@reviewId, @responderType, @responseText, @responseDate, @createdAt)";
+            MERGE INTO [dbo].[UsageMetric] AS target
+            USING (SELECT @AppId AS AppId, @VendorId AS VendorId, @MetricDate AS MetricDate) AS source
+            ON target.AppId = source.AppId 
+               AND target.VendorId = source.VendorId 
+               AND target.MetricDate = source.MetricDate
+            WHEN MATCHED THEN
+                UPDATE SET 
+                    Downloads = @Downloads,
+                    ActiveUsers = @ActiveUsers,
+                    CreatedAt = GETUTCDATE()
+            WHEN NOT MATCHED THEN
+                INSERT (AppId, VendorId, MetricDate, Downloads, ActiveUsers)
+                VALUES (@AppId, @VendorId, @MetricDate, @Downloads, @ActiveUsers);";
 
             using var conn = _connectionFactory.CreateConnection(_connectionString);
             await conn.ExecuteAsync(
-                new CommandDefinition(sql, new
-                {
-                    reviewId,
-                    responderType = responder,
-                    responseText,
-                    responseDate = respondedAt,
-                    createdAt = DateTime.UtcNow
-                }, cancellationToken: ct));
+                new CommandDefinition(sql, metric, cancellationToken: ct));
         }
     }
 }

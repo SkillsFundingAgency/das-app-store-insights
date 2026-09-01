@@ -14,7 +14,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SFA.DAS.AppStoreInsights.Fe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SFA.DAS.AppStoreInsights.Shared", "SFA.DAS.AppStoreInsights.Shared\SFA.DAS.AppStoreInsights.Shared.csproj", "{9817A4FE-9D15-4C14-B798-D5717E70CCC1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SFA.DAS.AppStoreInsights.UsageMetrics.Functions", "SFA.DAS.AppStoreInsights.UsageMetrics.Functions\SFA.DAS.AppStoreInsights.UsageMetrics.Functions.csproj", "{C6C9D7E8-FC2F-490C-980B-507086D7F4A2}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SFA.DAS.AppStoreInsights.Shared.UnitTests", "SFA.DAS.AppStoreInsights.Shared.UnitTests\SFA.DAS.AppStoreInsights.Shared.UnitTests.csproj", "{DE319EE7-8743-4193-A1C5-84698557307E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SFA.DAS.AppStoreInsights.UsageMetrics.Functions.UnitTests", "SFA.DAS.AppStoreInsights.UsageMetrics.Functions.UnitTests\SFA.DAS.AppStoreInsights.UsageMetrics.Functions.UnitTests.csproj", "{A5623967-631B-42D2-B31C-813793B9CC56}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SFA.DAS.AppStoreInsights.Feedback.Functions.UnitTests", "SFA.DAS.AppStoreInsights.Feedback.Functions.UnitTests\SFA.DAS.AppStoreInsights.Feedback.Functions.UnitTests.csproj", "{E3F8475D-D248-4CD1-9E7F-A613DDD2D7B7}"
 EndProject
@@ -36,10 +40,18 @@ Global
 		{9817A4FE-9D15-4C14-B798-D5717E70CCC1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9817A4FE-9D15-4C14-B798-D5717E70CCC1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9817A4FE-9D15-4C14-B798-D5717E70CCC1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C6C9D7E8-FC2F-490C-980B-507086D7F4A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6C9D7E8-FC2F-490C-980B-507086D7F4A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6C9D7E8-FC2F-490C-980B-507086D7F4A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6C9D7E8-FC2F-490C-980B-507086D7F4A2}.Release|Any CPU.Build.0 = Release|Any CPU
 		{DE319EE7-8743-4193-A1C5-84698557307E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{DE319EE7-8743-4193-A1C5-84698557307E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DE319EE7-8743-4193-A1C5-84698557307E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DE319EE7-8743-4193-A1C5-84698557307E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A5623967-631B-42D2-B31C-813793B9CC56}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A5623967-631B-42D2-B31C-813793B9CC56}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A5623967-631B-42D2-B31C-813793B9CC56}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A5623967-631B-42D2-B31C-813793B9CC56}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E3F8475D-D248-4CD1-9E7F-A613DDD2D7B7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E3F8475D-D248-4CD1-9E7F-A613DDD2D7B7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E3F8475D-D248-4CD1-9E7F-A613DDD2D7B7}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -60,6 +72,7 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{DE319EE7-8743-4193-A1C5-84698557307E} = {2D5BA2D4-5473-4661-B8DA-16F7C31BD5BD}
+		{A5623967-631B-42D2-B31C-813793B9CC56} = {2D5BA2D4-5473-4661-B8DA-16F7C31BD5BD}
 		{E3F8475D-D248-4CD1-9E7F-A613DDD2D7B7} = {2D5BA2D4-5473-4661-B8DA-16F7C31BD5BD}
 		{D1234ABC-1234-1234-1234-1234567890AB} = {2D5BA2D4-5473-4661-B8DA-16F7C31BD5BD}
 	EndGlobalSection
