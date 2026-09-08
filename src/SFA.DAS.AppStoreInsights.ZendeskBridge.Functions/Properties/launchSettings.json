@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "SFA.DAS.AppStoreInsights.Functions": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7118 --verbose",
+      "launchBrowser": false
+    }
+  }
+}
