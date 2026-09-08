@@ -274,6 +274,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         }
     }
 
+    [ExcludeFromCodeCoverage]
     public class ZendeskFieldIds
     {
         public long? Subject { get; set; }
