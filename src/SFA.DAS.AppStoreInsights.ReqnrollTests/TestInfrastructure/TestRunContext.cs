@@ -12,6 +12,7 @@ public class TestRunContext
     public IAppStoreRepository Repository { get; set; } = new InMemoryAppStoreRepository();
     public Mock<IAppleStoreClient> AppleClientMock { get; } = new();
     public Mock<IGooglePlayClient> GoogleClientMock { get; } = new();
+    public Mock<IZendeskClient> ZendeskClientMock { get; } = new();
     public IOptions<ApplicationConfiguration>? AppConfig { get; set; }
 
     public void Reset()
@@ -19,6 +20,7 @@ public class TestRunContext
         Repository = new InMemoryAppStoreRepository();
         AppleClientMock.Reset();
         GoogleClientMock.Reset();
+        ZendeskClientMock.Reset();
         AppConfig = null;
     }
 }
@@ -48,8 +50,11 @@ public class InMemoryAppStoreRepository : IAppStoreRepository
         return Task.CompletedTask;
     }
 
-    public Task<IEnumerable<Review>> GetUnprocessedNegativeReviewsAsync(int appId, CancellationToken ct)
-        => Task.FromResult(_reviews.Where(r => r.AppId == appId && r.IsNegative && string.IsNullOrEmpty(r.ZendeskTicketId)));
+    public Task<IEnumerable<Review>> GetUnprocessedReviewsAsync(int appId, CancellationToken ct)
+        => Task.FromResult(_reviews.Where(r => r.AppId == appId && string.IsNullOrEmpty(r.ZendeskTicketId) && r.ProcessedAt == null).AsEnumerable());
+
+    public Task<IEnumerable<Review>> GetReviewsWithTicketButNoResponseAsync(int appId, CancellationToken ct)
+        => Task.FromResult(_reviews.Where(r => r.AppId == appId && !string.IsNullOrEmpty(r.ZendeskTicketId) && !_responses.Any(resp => resp.ReviewId == r.Id)).AsEnumerable());
 
     public Task UpdateReviewZendeskTicketIdAsync(long reviewId, string ticketId, CancellationToken ct)
     {
@@ -62,13 +67,22 @@ public class InMemoryAppStoreRepository : IAppStoreRepository
     public Task<Review?> GetReviewByZendeskTicketIdAsync(string ticketId, CancellationToken ct)
         => Task.FromResult(_reviews.FirstOrDefault(r => r.ZendeskTicketId == ticketId));
 
-    public Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct)
+    public Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct, string? externalResponseId = null)
     {
-        _responses.Add(new ResponseEntry { ReviewId = reviewId, ResponseText = responseText, Responder = responder, RespondedAt = respondedAt });
+        _responses.Add(new ResponseEntry
+        {
+            ReviewId = reviewId,
+            ResponseText = responseText,
+            Responder = responder,
+            RespondedAt = respondedAt,
+            ExternalResponseId = externalResponseId
+        });
         return Task.CompletedTask;
     }
 
-    // Helper methods for tests
+    public Task<bool> ResponseExistsForReviewAsync(long reviewId, string externalResponseId, CancellationToken ct)
+        => Task.FromResult(_responses.Any(r => r.ReviewId == reviewId && r.ExternalResponseId == externalResponseId));
+
     public Task<List<Review>> GetAllReviewsAsync()
         => Task.FromResult(_reviews.ToList());
 
@@ -85,4 +99,5 @@ public class ResponseEntry
     public string ResponseText { get; set; } = string.Empty;
     public string Responder { get; set; } = string.Empty;
     public DateTime RespondedAt { get; set; }
+    public string? ExternalResponseId { get; set; }
 }
