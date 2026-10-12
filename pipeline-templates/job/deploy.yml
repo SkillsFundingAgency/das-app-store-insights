@@ -47,6 +47,7 @@ jobs:
               SqlConnectionString: $(SqlConnectionString)
               ApplePrivateKey: $(ApplePrivateKey)
               GoogleServiceAccountJson: $(GoogleServiceAccountJson)
+              ZendeskClientSecret: $(ZendeskClientSecret)
         - template: azure-pipelines-templates/deploy/step/sql-dacpac-deploy.yml@das-platform-building-blocks
           parameters:
             AzureSubscription: ${{ parameters.ServiceConnection }}
