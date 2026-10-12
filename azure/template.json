@@ -103,11 +103,13 @@
         "resourceGroupName": "[concat(variables('resourceNamePrefix'), '-rg')]",
         "FeedbackFunctionAppName": "[concat(variables('resourceNamePrefix'), '-fa')]",
         "MetricsFunctionAppName": "[concat(variables('resourceNamePrefix'), '-metrics-fa')]",
+        "ZendeskBridgeFunctionAppName": "[concat(variables('resourceNamePrefix'), '-zen-fa')]",
         "appServicePlanName": "[concat(variables('resourceNamePrefix'), '-asp')]",
         "databaseName": "[concat(variables('resourceNamePrefix'), '-db')]",
         "privateLinkScopeName": "[toLower(concat('das-', parameters('resourceEnvironmentName'),'-shared-ampls'))]",
         "feedbackConfigNames": "SFA.DAS.AppStoreInsights.Feedback.Functions",
         "metricsConfigNames": "SFA.DAS.AppStoreInsights.UsageMetrics.Functions",
+        "zendeskConfigNames": "SFA.DAS.AppStoreInsights.ZendeskBridge.Functions",
         "routeTableId": {
             "id": "[resourceId(subscription().subscriptionId, parameters('sharedEnvResourceGroup'), 'Microsoft.Network/routeTables', parameters('SharedRouteTableName'))]"
         },
@@ -504,6 +506,165 @@
             ]
         },
         {
+            "apiVersion": "2021-04-01",
+            "name": "[concat(variables('ZendeskBridgeFunctionAppName'), '-application-insights-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'application-insights.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "appInsightsName": {
+                        "value": "[variables('ZendeskBridgeFunctionAppName')]"
+                    },
+                    "attachedService": {
+                        "value": "[variables('ZendeskBridgeFunctionAppName')]"
+                    },
+                    "logAnalyticsWorkspaceId": {
+                        "value": "[resourceId(parameters('logAnalyticsSubscriptionId'),parameters('sharedManagementResourceGroup'),'Microsoft.OperationalInsights/workspaces',parameters('logAnalyticsWorkspaceName'))]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[variables('resourceGroupName')]"
+            ]
+        },
+        {
+            "condition": "[parameters('deployPrivateLinkedScopedResource')]",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(variables('ZendeskBridgeFunctionAppName'), '-private-link-scoped-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[parameters('sharedEnvResourceGroup')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'private-linked-scoped-resource.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "privateLinkScopeName": {
+                        "value": "[variables('privateLinkScopeName')]"
+                    },
+                    "scopedResourceName": {
+                        "value": "[variables('ZendeskBridgeFunctionAppName')]"
+                    },
+                    "scopedResourceId": {
+                        "value": "[reference(concat(variables('ZendeskBridgeFunctionAppName'), '-application-insights-', parameters('utcValue'))).outputs.AppInsightsResourceId.value]"
+                    }
+                }
+            }
+        },
+        {
+            "apiVersion": "2021-04-01",
+            "name": "[concat(variables('ZendeskBridgeFunctionAppName'), '-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'function-app-v2.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "functionAppName": {
+                        "value": "[variables('ZendeskBridgeFunctionAppName')]"
+                    },
+                    "appServicePlanName": {
+                        "value": "[variables('appServicePlanName')]"
+                    },
+                    "appServicePlanResourceGroup": {
+                        "value": "[variables('resourceGroupName')]"
+                    },
+                    "netFrameworkVersion": {
+                        "value": "v10.0"
+                    },
+                    "subnetResourceId": {
+                        "value": "[reference(concat(parameters('subnetObject').name, '-', parameters('utcValue'))).outputs.SubnetResourceId.value]"
+                    },
+                    "functionAppAppSettings": {
+                        "value": {
+                            "array": [
+                                {
+                                    "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                    "value": "[reference(concat(variables('ZendeskBridgeFunctionAppName'), '-application-insights-', parameters('utcValue'))).outputs.ConnectionString.value]"
+                                },
+                                {
+                                    "name": "AzureWebJobsStorage",
+                                    "value": "[parameters('sharedStorageAccountConnectionString')]"
+                                },
+                                {
+                                    "name": "ConfigNames",
+                                    "value": "[variables('zendeskConfigNames')]"
+                                },
+                                {
+                                    "name": "ConfigurationStorageConnectionString",
+                                    "value": "[parameters('configurationStorageConnectionString')]"
+                                },
+                                {
+                                    "name": "EnvironmentName",
+                                    "value": "[parameters('environmentName')]"
+                                },
+                                {
+                                    "name": "FUNCTIONS_EXTENSION_VERSION",
+                                    "value": "~4"
+                                },
+                                {
+                                    "name": "FUNCTIONS_WORKER_RUNTIME",
+                                    "value": "dotnet-isolated"
+                                },
+                                {
+                                    "name": "SqlConnectionString",
+                                    "value": "[parameters('SqlConnectionString')]"
+                                },
+                                {
+                                    "name": "WEBSITE_RUN_FROM_PACKAGE",
+                                    "value": "1"
+                                },
+                                {
+                                    "name": "Version",
+                                    "value": "1.0"
+                                }
+                            ]
+                        }
+                    },
+                    "ipSecurityRestrictions": {
+                        "value": "[parameters('workerAccessRestrictions')]"
+                    },
+                    "vnetRouteAllEnabled": {
+                        "value": "[parameters('vnetRouteAllEnabled')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[variables('resourceGroupName')]",
+                "[concat(variables('appServicePlanName'), '-', parameters('utcValue'))]"
+            ]
+        },
+        {
+            "apiVersion": "2022-09-01",
+            "name": "[concat(variables('ZendeskBridgeFunctionAppName'), '-cors-policies-', parameters('utcValue'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[variables('resourceGroupName')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(variables('deploymentUrlBase'),'cors-policy.json')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "functionAppName": {
+                        "value": "[variables('ZendeskBridgeFunctionAppName')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('ZendeskBridgeFunctionAppName'), '-', parameters('utcValue'))]"
+            ]
+        },
+        {
             "apiVersion": "2020-06-01",
             "name": "[concat(variables('databaseName'), '-', parameters('utcValue'))]",
             "type": "Microsoft.Resources/deployments",
@@ -576,6 +737,10 @@
         "UsageMetricsFunctionAppName": {
             "type": "string",
             "value": "[variables('MetricsFunctionAppName')]"
+        },
+        "ZendeskBridgeFunctionAppName": {
+            "type": "string",
+            "value": "[variables('ZendeskBridgeFunctionAppName')]"
         },
         "DatabaseName": {
             "type": "string",

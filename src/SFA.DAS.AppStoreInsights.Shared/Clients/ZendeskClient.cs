@@ -1,0 +1,478 @@
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using SFA.DAS.AppStoreInsights.Shared.Models;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace SFA.DAS.AppStoreInsights.Shared.Clients
+{
+    [ExcludeFromCodeCoverage]
+    public class ZendeskClient : IZendeskClient
+    {
+        private readonly HttpClient _httpClient;
+        private readonly ILogger<ZendeskClient> _logger;
+        private readonly string _subdomain;
+        private readonly string _clientId;
+        private readonly string _clientSecret;
+        private readonly ZendeskFieldIds _fieldIds;
+
+        private string _accessToken;
+        private DateTime _tokenExpiry = DateTime.MinValue;
+
+        private readonly SemaphoreSlim _tokenSemaphore = new SemaphoreSlim(1, 1);
+
+        public ZendeskClient(
+            HttpClient httpClient,
+            IConfiguration config,
+            ILogger<ZendeskClient> logger)
+        {
+            _httpClient = httpClient;
+            _logger = logger;
+
+            _subdomain = config["Zendesk:Subdomain"]
+                ?? throw new InvalidOperationException("Zendesk:Subdomain missing");
+
+            _clientId = config["Zendesk:ClientId"]
+                ?? throw new InvalidOperationException("Zendesk:ClientId missing");
+
+            _clientSecret = config["Zendesk:ClientSecret"]
+                ?? throw new InvalidOperationException("Zendesk:ClientSecret missing");
+
+            var baseUrl = $"https://{_subdomain}.zendesk.com/api/v2/";
+            _httpClient.BaseAddress = new Uri(baseUrl);
+
+            _httpClient.DefaultRequestHeaders.Accept.Clear();
+            _httpClient.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/json"));
+
+            _fieldIds = ZendeskFieldIds.GetFieldIdsForClientId(_clientId);
+
+            _logger.LogInformation(
+                "ZendeskClient initialized for subdomain {Subdomain}, clientId {ClientId}, " +
+                "GroupId={GroupId}, TicketFormId={TicketFormId}",
+                _subdomain,
+                _clientId,
+                _fieldIds.GroupId,
+                _fieldIds.TicketFormId);
+        }
+
+        private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
+        {
+            if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _tokenExpiry)
+            {
+                return _accessToken;
+            }
+
+            await _tokenSemaphore.WaitAsync(cancellationToken);
+
+            try
+            {
+                if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _tokenExpiry)
+                {
+                    return _accessToken;
+                }
+
+                _logger.LogInformation("Obtaining new Zendesk OAuth token");
+
+                var tokenUrl = $"https://{_subdomain}.zendesk.com/oauth/tokens";
+
+                var formData = new Dictionary<string, string>
+                {
+                    ["grant_type"] = "client_credentials",
+                    ["client_id"] = _clientId,
+                    ["client_secret"] = _clientSecret,
+                    ["scope"] = "read write"
+                };
+
+                using var content = new FormUrlEncodedContent(formData);
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
+
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue("application/json"));
+
+                request.Content = content;
+
+                _logger.LogDebug("Requesting Zendesk OAuth token from {TokenUrl}", tokenUrl);
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError(
+                        "Zendesk OAuth token request failed. StatusCode: {StatusCode}, Response: {Response}",
+                        (int)response.StatusCode,
+                        responseBody);
+
+                    throw new HttpRequestException(
+                        $"Zendesk OAuth token request failed: {(int)response.StatusCode} {response.StatusCode} - {responseBody}");
+                }
+
+                _logger.LogDebug("Zendesk OAuth token request succeeded");
+
+                using var document = JsonDocument.Parse(responseBody);
+                var root = document.RootElement;
+
+                if (!root.TryGetProperty("access_token", out var tokenElement))
+                {
+                    throw new InvalidOperationException("Zendesk OAuth response did not contain 'access_token'.");
+                }
+
+                var accessToken = tokenElement.GetString();
+
+                if (string.IsNullOrWhiteSpace(accessToken))
+                {
+                    throw new InvalidOperationException("Zendesk OAuth returned an empty access token.");
+                }
+
+                var expiresIn = 3600;
+
+                if (root.TryGetProperty("expires_in", out var expiresElement) &&
+                    expiresElement.ValueKind == JsonValueKind.Number)
+                {
+                    expiresIn = expiresElement.GetInt32();
+                }
+
+                var refreshSeconds = Math.Max(60, expiresIn - 60);
+
+                _accessToken = accessToken;
+                _tokenExpiry = DateTime.UtcNow.AddSeconds(refreshSeconds);
+
+                _logger.LogInformation(
+                    "Zendesk OAuth token obtained successfully. Token expires at {TokenExpiry}",
+                    _tokenExpiry);
+
+                return _accessToken;
+            }
+            finally
+            {
+                _tokenSemaphore.Release();
+            }
+        }
+
+        private async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken = default)
+        {
+            var token = await GetAccessTokenAsync(cancellationToken);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        public async Task<string> CreateTicketAsync(ZendeskTicket ticket, CancellationToken cancellationToken = default)
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+
+            var customFields = new List<object>();
+
+            AddCustomField(customFields, _fieldIds.RatingApp, ticket.RatingApp);
+            AddCustomField(customFields, _fieldIds.FeedbackApp, ticket.FeedbackApp);
+            AddCustomField(customFields, _fieldIds.FeedbackIdApp, ticket.FeedbackIdApp);
+            AddCustomField(customFields, _fieldIds.AppStore, ticket.AppStore);
+            AddCustomField(customFields, _fieldIds.ResponseApp, ticket.ResponseApp);
+            AddCustomField(customFields, _fieldIds.Subject, ticket.Subject);
+            AddCustomField(customFields, _fieldIds.Description, ticket.Comment);
+
+            // Build the ticket payload as a dictionary so we can conditionally
+            // include the environment-specific group and form IDs.
+            var ticketPayload = new Dictionary<string, object>
+            {
+                ["subject"] = ticket.Subject,
+                ["comment"] = new
+                {
+                    body = BuildCommentBody(ticket)
+                },
+                ["requester"] = new
+                {
+                    name = ticket.RequesterName,
+                    email = ticket.RequesterEmail ?? $"{ticket.RequesterName?.Replace(" ", "")}@anonymous.zendesk.com"
+                },
+                ["priority"] = ticket.Priority,
+                ["tags"] = ticket.Tags
+            };
+
+            if (customFields.Count > 0)
+            {
+                ticketPayload["custom_fields"] = customFields;
+            }
+
+            // Only send group_id / ticket_form_id if they're configured for this environment
+            if (_fieldIds.GroupId.HasValue && _fieldIds.GroupId.Value > 0)
+            {
+                ticketPayload["group_id"] = _fieldIds.GroupId.Value;
+            }
+
+            if (_fieldIds.TicketFormId.HasValue && _fieldIds.TicketFormId.Value > 0)
+            {
+                ticketPayload["ticket_form_id"] = _fieldIds.TicketFormId.Value;
+            }
+
+            var payload = new
+            {
+                ticket = ticketPayload
+            };
+
+            var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            _logger.LogInformation(
+                "Creating Zendesk ticket. GroupId={GroupId}, TicketFormId={TicketFormId}, Payload={Payload}",
+                _fieldIds.GroupId,
+                _fieldIds.TicketFormId,
+                json);
+
+            using var response = await _httpClient.PostAsync("tickets.json", content, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                _logger.LogError(
+                    "Zendesk API error creating ticket. StatusCode: {StatusCode}, Response: {Error}",
+                    (int)response.StatusCode,
+                    error);
+
+                throw new HttpRequestException(
+                    $"Failed to create ticket: {(int)response.StatusCode} {response.StatusCode} - {error}");
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            using var document = JsonDocument.Parse(responseJson);
+
+            var ticketElement = document.RootElement.GetProperty("ticket");
+            var ticketId = ticketElement.GetProperty("id").ToString();
+
+            // Log what Zendesk actually applied, so we can detect when our requested
+            // group_id / ticket_form_id was overridden or dropped server-side.
+            long? assignedGroupId = ticketElement.TryGetProperty("group_id", out var groupEl)
+                && groupEl.ValueKind != JsonValueKind.Null
+                    ? groupEl.GetInt64()
+                    : null;
+
+            long? assignedFormId = ticketElement.TryGetProperty("ticket_form_id", out var formEl)
+                && formEl.ValueKind != JsonValueKind.Null
+                    ? formEl.GetInt64()
+                    : null;
+
+            _logger.LogInformation(
+                "Created Zendesk ticket {TicketId}. RequestedGroupId={RequestedGroupId}, " +
+                "AssignedGroupId={AssignedGroupId}, RequestedFormId={RequestedFormId}, " +
+                "AssignedFormId={AssignedFormId}",
+                ticketId,
+                _fieldIds.GroupId,
+                assignedGroupId,
+                _fieldIds.TicketFormId,
+                assignedFormId);
+
+            return ticketId;
+        }
+
+        public async Task PostReplyAsync(string ticketId, string comment, CancellationToken cancellationToken = default)
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+
+            var payload = new
+            {
+                ticket = new
+                {
+                    comment = new
+                    {
+                        body = comment
+                    }
+                }
+            };
+
+            var json = JsonSerializer.Serialize(payload);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var response = await _httpClient.PutAsync($"tickets/{ticketId}.json", content, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Zendesk reply error. StatusCode: {StatusCode}, Response: {Error}",
+                    (int)response.StatusCode, error);
+                throw new HttpRequestException($"Failed to post reply: {(int)response.StatusCode} {response.StatusCode} - {error}");
+            }
+
+            _logger.LogInformation("Successfully posted reply to Zendesk ticket {TicketId}", ticketId);
+        }
+
+        public async Task<List<ZendeskComment>> GetTicketCommentsAsync(string ticketId, CancellationToken cancellationToken = default)
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+
+            var comments = new List<ZendeskComment>();
+            string url = $"tickets/{ticketId}/comments.json";
+
+            while (!string.IsNullOrEmpty(url))
+            {
+                using var response = await _httpClient.GetAsync(url, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogError("Zendesk get comments error. StatusCode: {StatusCode}, Response: {Error}",
+                        (int)response.StatusCode, error);
+                    throw new HttpRequestException($"Failed to get comments: {(int)response.StatusCode} {response.StatusCode} - {error}");
+                }
+
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("comments", out var commentsArray))
+                {
+                    foreach (var comment in commentsArray.EnumerateArray())
+                    {
+                        comments.Add(new ZendeskComment
+                        {
+                            Id = comment.GetProperty("id").ToString(),
+                            Body = comment.GetProperty("body").GetString() ?? string.Empty,
+                            AuthorRole = comment.TryGetProperty("author", out var author) && author.TryGetProperty("role", out var role)
+                                ? role.GetString() ?? "unknown" : "unknown",
+                            Public = comment.TryGetProperty("public", out var isPublic) && isPublic.GetBoolean(),
+                            CreatedAt = comment.TryGetProperty("created_at", out var createdAt)
+                                ? DateTime.Parse(createdAt.GetString()) : DateTime.UtcNow
+                        });
+                    }
+                }
+
+                url = root.TryGetProperty("next_page", out var nextPage) ? nextPage.GetString() : null;
+            }
+
+            return comments;
+        }
+
+        public async Task UpdateTicketAsync(string ticketId, object payload, CancellationToken cancellationToken = default)
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+
+            var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var response = await _httpClient.PutAsync($"tickets/{ticketId}.json", content, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Zendesk update error. StatusCode: {StatusCode}, Response: {Error}",
+                    (int)response.StatusCode, error);
+                throw new HttpRequestException($"Failed to update ticket: {(int)response.StatusCode} {response.StatusCode} - {error}");
+            }
+
+            _logger.LogInformation("Successfully updated Zendesk ticket {TicketId}", ticketId);
+        }
+
+        private void AddCustomField(List<object> fields, long? fieldId, string value)
+        {
+            if (fieldId.HasValue && !string.IsNullOrEmpty(value))
+            {
+                fields.Add(new { id = fieldId.Value, value });
+            }
+        }
+
+        private string BuildCommentBody(ZendeskTicket ticket)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("App Feedback");
+            sb.AppendLine("============");
+            sb.AppendLine();
+
+            sb.AppendLine($"Rating: {ticket.RatingApp}");
+            sb.AppendLine($"App Store: {ticket.AppStore}");
+            sb.AppendLine($"Feedback ID: {ticket.FeedbackIdApp}");
+
+            sb.AppendLine();
+
+            sb.AppendLine("Feedback:");
+            sb.AppendLine(ticket.FeedbackApp);
+
+            sb.AppendLine();
+
+            sb.AppendLine("Original Comment:");
+            sb.AppendLine(ticket.Comment);
+
+            return sb.ToString();
+        }
+
+        public void Dispose()
+        {
+            _tokenSemaphore.Dispose();
+        }
+    }
+
+    [ExcludeFromCodeCoverage]
+    public class ZendeskFieldIds
+    {
+        // Custom field IDs
+        public long? Subject { get; set; }
+        public long? Description { get; set; }
+        public long? RatingApp { get; set; }
+        public long? FeedbackApp { get; set; }
+        public long? FeedbackIdApp { get; set; }
+        public long? AppStore { get; set; }
+        public long? ResponseApp { get; set; }
+
+        // Ticket routing
+        public long? GroupId { get; set; }
+        public long? TicketFormId { get; set; }
+
+        public static ZendeskFieldIds GetFieldIdsForClientId(string clientId)
+        {
+            var isSandbox = !string.IsNullOrEmpty(clientId)
+                && clientId.Contains("sandbox", StringComparison.OrdinalIgnoreCase);
+
+            return isSandbox ? GetSandboxFieldIds() : GetProductionFieldIds();
+        }
+
+        private static ZendeskFieldIds GetSandboxFieldIds()
+        {
+            return new ZendeskFieldIds
+            {
+                Subject = 360004115339,
+                Description = 360004115359,
+                RatingApp = 32864764317458,
+                FeedbackApp = 32864890088850,
+                FeedbackIdApp = 32864817261586,
+                AppStore = 32864812572562,
+                ResponseApp = 32865263485458,
+
+                GroupId = 32486582349458,
+                TicketFormId = 32486666242706
+            };
+        }
+
+        private static ZendeskFieldIds GetProductionFieldIds()
+        {
+            return new ZendeskFieldIds
+            {
+                Subject = 360002090379,
+                Description = 360002090399,
+                RatingApp = 37979106701842,
+                FeedbackApp = 37979094615570,
+                FeedbackIdApp = 37979127645714,
+                AppStore = 37979179913362,
+                ResponseApp = 37979178552210,
+
+                GroupId = 37980192344338,
+                TicketFormId = 37979349676690
+            };
+        }
+    }
+}
