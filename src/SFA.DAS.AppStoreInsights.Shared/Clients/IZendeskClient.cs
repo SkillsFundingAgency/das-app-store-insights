@@ -1,6 +1,7 @@
 ﻿using SFA.DAS.AppStoreInsights.Shared.Models;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -33,6 +34,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     /// <summary>
     /// Represents a comment on a Zendesk ticket.
     /// </summary>
+    [ExcludeFromCodeCoverage]
     public class ZendeskComment
     {
         public string Id { get; set; }                 // Unique comment ID

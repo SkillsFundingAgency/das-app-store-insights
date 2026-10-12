@@ -6,6 +6,7 @@ using SFA.DAS.AppStoreInsights.Shared.Clients;
 using SFA.DAS.AppStoreInsights.Shared.Models;
 using SFA.DAS.AppStoreInsights.Shared.Repositories;
 using SFA.DAS.AppStoreInsights.ZendeskBridge.Functions.Configuration;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
 {
@@ -186,10 +187,7 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
         //    }
         //}
 
-        /// <summary>
-        /// True when the configured Zendesk OAuth client id indicates the sandbox tenant
-        /// (i.e. anything containing "sandbox", case-insensitive).
-        /// </summary>
+        [ExcludeFromCodeCoverage]
         private bool IsSandboxZendesk()
         {
             var clientId = _configuration["Zendesk:ClientId"];
