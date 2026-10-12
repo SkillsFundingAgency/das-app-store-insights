@@ -417,6 +417,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         }
     }
 
+    [ExcludeFromCodeCoverage]
     public class ZendeskFieldIds
     {
         // Custom field IDs
@@ -432,11 +433,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
         public long? GroupId { get; set; }
         public long? TicketFormId { get; set; }
 
-        /// <summary>
-        /// Resolves the correct set of Zendesk field IDs based on the OAuth client id.
-        /// Client IDs containing "sandbox" (case-insensitive) use the sandbox set;
-        /// everything else uses the production set.
-        /// </summary>
         public static ZendeskFieldIds GetFieldIdsForClientId(string clientId)
         {
             var isSandbox = !string.IsNullOrEmpty(clientId)
@@ -457,7 +453,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 AppStore = 32864812572562,
                 ResponseApp = 32865263485458,
 
-                // Sandbox routing
                 GroupId = 32486582349458,
                 TicketFormId = 32486666242706
             };
@@ -475,7 +470,6 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 AppStore = 37979179913362,
                 ResponseApp = 37979178552210,
 
-                // Production routing
                 GroupId = 37980192344338,
                 TicketFormId = 37979349676690
             };

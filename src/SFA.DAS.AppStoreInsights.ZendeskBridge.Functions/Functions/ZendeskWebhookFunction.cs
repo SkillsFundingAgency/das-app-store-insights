@@ -155,36 +155,36 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
         //    }
         //}
 
-        private async Task UpdateZendeskResponseField(string ticketId, string responseText)
-        {
-            try
-            {
-                var clientId = _configuration["Zendesk:ClientId"];
-                var fieldIds = ZendeskFieldIds.GetFieldIdsForClientId(clientId);
+        //private async Task UpdateZendeskResponseField(string ticketId, string responseText)
+        //{
+        //    try
+        //    {
+        //        var clientId = _configuration["Zendesk:ClientId"];
+        //        var fieldIds = ZendeskFieldIds.GetFieldIdsForClientId(clientId);
 
-                if (fieldIds.ResponseApp.HasValue)
-                {
-                    var payload = new
-                    {
-                        ticket = new
-                        {
-                            custom_fields = new[]
-                            {
-                                new { id = fieldIds.ResponseApp.Value, value = responseText }
-                            }
-                        }
-                    };
+        //        if (fieldIds.ResponseApp.HasValue)
+        //        {
+        //            var payload = new
+        //            {
+        //                ticket = new
+        //                {
+        //                    custom_fields = new[]
+        //                    {
+        //                        new { id = fieldIds.ResponseApp.Value, value = responseText }
+        //                    }
+        //                }
+        //            };
 
-                    await _zendeskClient.UpdateTicketAsync(ticketId, payload, CancellationToken.None);
-                    _logger.LogInformation("Updated Response (app) field for ticket {TicketId} with: {Response}",
-                        ticketId, responseText);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to update Response (app) field for ticket {TicketId}", ticketId);
-            }
-        }
+        //            await _zendeskClient.UpdateTicketAsync(ticketId, payload, CancellationToken.None);
+        //            _logger.LogInformation("Updated Response (app) field for ticket {TicketId} with: {Response}",
+        //                ticketId, responseText);
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogWarning(ex, "Failed to update Response (app) field for ticket {TicketId}", ticketId);
+        //    }
+        //}
 
         /// <summary>
         /// True when the configured Zendesk OAuth client id indicates the sandbox tenant
