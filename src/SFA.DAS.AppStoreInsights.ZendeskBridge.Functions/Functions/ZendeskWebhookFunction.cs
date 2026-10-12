@@ -1,4 +1,5 @@
 ﻿using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SFA.DAS.AppStoreInsights.Shared.Clients;
@@ -16,6 +17,7 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
         private readonly IZendeskClient _zendeskClient;
         private readonly ILogger<ZendeskWebhookFunction> _logger;
         private readonly ApplicationConfiguration _appConfig;
+        private readonly IConfiguration _configuration;
 
         public ZendeskWebhookFunction(
             IAppStoreRepository repo,
@@ -23,7 +25,9 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
             IGooglePlayClient googleClient,
             IZendeskClient zendeskClient,
             IOptions<ApplicationConfiguration> appConfig,
-            ILogger<ZendeskWebhookFunction> logger)
+            ILogger<ZendeskWebhookFunction> logger,
+            IConfiguration configuration
+            )
         {
             _repo = repo;
             _appleClient = appleClient;
@@ -31,6 +35,7 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
             _zendeskClient = zendeskClient;
             _appConfig = appConfig.Value;
             _logger = logger;
+            _configuration = configuration;
         }
 
         [Function("CreateZendeskTickets")]
@@ -70,6 +75,126 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
                     _logger.LogError(ex, "Failed to create ticket for review {ReviewId}", review.Id);
                 }
             }
+        }
+
+        //[Function("SyncZendeskReplies")]
+        //public async Task RunSyncReplies(
+        //    [TimerTrigger("0 */30 * * * *")] TimerInfo timer)
+        //{
+        //    _logger.LogInformation("Polling Zendesk for new replies on our tickets...");
+
+        //    var appId = await _repo.GetAppIdAsync("Apprentice App", CancellationToken.None);
+        //    var reviews = await _repo.GetReviewsWithTicketButNoResponseAsync(appId, CancellationToken.None);
+
+        //    // Use the Zendesk tenant (sandbox vs production) as the single source of
+        //    // truth for whether we're allowed to post replies back to the app stores.
+        //    var isProduction = !IsSandboxZendesk();
+
+        //    foreach (var review in reviews)
+        //    {
+        //        try
+        //        {
+        //            var comments = await _zendeskClient.GetTicketCommentsAsync(review.ZendeskTicketId!, CancellationToken.None);
+
+        //            var agentReply = comments
+        //                .Where(c => c.Public && string.Equals(c.AuthorRole, "agent", StringComparison.OrdinalIgnoreCase))
+        //                .OrderByDescending(c => c.CreatedAt)
+        //                .FirstOrDefault();
+
+        //            if (agentReply == null)
+        //                continue;
+
+        //            if (await _repo.ResponseExistsForReviewAsync(review.Id, agentReply.Id, CancellationToken.None))
+        //            {
+        //                _logger.LogDebug("Reply {CommentId} already processed for review {ReviewId}", agentReply.Id, review.Id);
+        //                continue;
+        //            }
+
+        //            if (review.VendorId != 1 && review.VendorId != 2)
+        //            {
+        //                _logger.LogWarning("Unknown vendor ID {VendorId} for review {ReviewId}", review.VendorId, review.Id);
+        //                continue;
+        //            }
+
+        //            if (isProduction)
+        //            {
+        //                if (review.VendorId == 1)
+        //                {
+        //                    await _appleClient.PostResponseAsync(_appConfig.AppleAppId, review.ExternalId, agentReply.Body);
+        //                }
+        //                else if (review.VendorId == 2)
+        //                {
+        //                    await _googleClient.PostResponseAsync(_appConfig.GooglePackageName, review.ExternalId, agentReply.Body);
+        //                }
+        //            }
+        //            else
+        //            {
+        //                _logger.LogInformation(
+        //                    "Skipping post to app store for review {ReviewId} - using sandbox Zendesk tenant. Reply that would have been posted: {Reply}",
+        //                    review.Id,
+        //                    agentReply.Body);
+        //            }
+
+        //            await UpdateZendeskResponseField(review.ZendeskTicketId!, agentReply.Body);
+
+        //            await _repo.InsertResponseAsync(
+        //                review.Id,
+        //                agentReply.Body,
+        //                "SupportAgent",
+        //                agentReply.CreatedAt,
+        //                CancellationToken.None,
+        //                agentReply.Id);
+
+        //            _logger.LogInformation("Synced reply from Zendesk ticket {TicketId} for review {ReviewId} (comment {CommentId})",
+        //                review.ZendeskTicketId, review.Id, agentReply.Id);
+        //        }
+        //        catch (Exception ex)
+        //        {
+        //            _logger.LogError(ex, "Failed to sync reply for review {ReviewId}", review.Id);
+        //        }
+        //    }
+        //}
+
+        private async Task UpdateZendeskResponseField(string ticketId, string responseText)
+        {
+            try
+            {
+                var clientId = _configuration["Zendesk:ClientId"];
+                var fieldIds = ZendeskFieldIds.GetFieldIdsForClientId(clientId);
+
+                if (fieldIds.ResponseApp.HasValue)
+                {
+                    var payload = new
+                    {
+                        ticket = new
+                        {
+                            custom_fields = new[]
+                            {
+                                new { id = fieldIds.ResponseApp.Value, value = responseText }
+                            }
+                        }
+                    };
+
+                    await _zendeskClient.UpdateTicketAsync(ticketId, payload, CancellationToken.None);
+                    _logger.LogInformation("Updated Response (app) field for ticket {TicketId} with: {Response}",
+                        ticketId, responseText);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to update Response (app) field for ticket {TicketId}", ticketId);
+            }
+        }
+
+        /// <summary>
+        /// True when the configured Zendesk OAuth client id indicates the sandbox tenant
+        /// (i.e. anything containing "sandbox", case-insensitive).
+        /// </summary>
+        private bool IsSandboxZendesk()
+        {
+            var clientId = _configuration["Zendesk:ClientId"];
+            return !string.IsNullOrEmpty(clientId)
+                && clientId.Contains("sandbox", StringComparison.OrdinalIgnoreCase);
         }
 
         private string GetRatingTag(byte rating)

@@ -18,8 +18,11 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
         Task InsertReviewAsync(Review review, CancellationToken ct);
         Task InsertUsageMetricAsync(UsageMetric metric, CancellationToken ct);
         Task<IEnumerable<Review>> GetUnprocessedReviewsAsync(int appId, CancellationToken ct);
+        Task<IEnumerable<Review>> GetReviewsWithTicketButNoResponseAsync(int appId, CancellationToken ct);
         Task UpdateReviewZendeskTicketIdAsync(long reviewId, string ticketId, CancellationToken ct);
         Task<Review> GetReviewByZendeskTicketIdAsync(string ticketId, CancellationToken ct);
+        Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct, string? externalResponseId = null);
+        Task<bool> ResponseExistsForReviewAsync(long reviewId, string externalResponseId, CancellationToken ct);
     }
 
     [ExcludeFromCodeCoverage]
@@ -105,6 +108,22 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
                 new CommandDefinition(sql, new { appId }, cancellationToken: ct));
         }
 
+        public async Task<IEnumerable<Review>> GetReviewsWithTicketButNoResponseAsync(int appId, CancellationToken ct)
+        {
+            const string sql = @"
+                SELECT r.Id, r.AppId, r.VendorId, r.ExternalId, r.ReviewerName, r.Rating, r.Title, r.Comment, r.ReviewDate, r.DeviceInfo, r.IsNegative, r.ZendeskTicketId, r.ProcessedAt
+                FROM [dbo].[Review] r
+                LEFT JOIN [dbo].[Response] resp ON r.Id = resp.ReviewId
+                WHERE r.AppId = @appId
+                    AND r.ZendeskTicketId IS NOT NULL
+                    AND r.ZendeskTicketId != ''
+                    AND resp.Id IS NULL
+                ORDER BY r.ReviewDate DESC";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            return await conn.QueryAsync<Review>(
+                new CommandDefinition(sql, new { appId }, cancellationToken: ct));
+        }
         public async Task UpdateReviewZendeskTicketIdAsync(long reviewId, string ticketId, CancellationToken ct)
         {
             const string sql = @"
@@ -132,6 +151,36 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
             using var conn = _connectionFactory.CreateConnection(_connectionString);
             return await conn.QueryFirstOrDefaultAsync<Review>(
                 new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+        }
+
+        public async Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct, string? externalResponseId = null)
+        {
+            const string sql = @"
+                INSERT INTO [dbo].[Response] (ReviewId, ResponderType, ResponseText, ResponseDate, ExternalResponseId, CreatedAt)
+                VALUES (@reviewId, @responderType, @responseText, @responseDate, @externalResponseId, @createdAt)";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            await conn.ExecuteAsync(
+                new CommandDefinition(sql, new
+                {
+                    reviewId,
+                    responderType = responder,
+                    responseText,
+                    responseDate = respondedAt,
+                    externalResponseId = externalResponseId,
+                    createdAt = DateTime.UtcNow
+                }, cancellationToken: ct));
+        }
+
+        public async Task<bool> ResponseExistsForReviewAsync(long reviewId, string externalResponseId, CancellationToken ct)
+        {
+            const string sql = @"
+                SELECT COUNT(1) FROM [dbo].[Response] WHERE ReviewId = @reviewId AND ExternalResponseId = @externalResponseId";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            var count = await conn.ExecuteScalarAsync<int>(
+                new CommandDefinition(sql, new { reviewId, externalResponseId }, cancellationToken: ct));
+            return count > 0;
         }
     }
 }

@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -27,6 +29,7 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions.UnitTests
         private Mock<ILogger<ZendeskWebhookFunction>> _loggerMock;
         private ZendeskWebhookFunction _function;
         private Mock<FunctionContext> _functionContextMock;
+        private IConfiguration _configuration;
 
         [SetUp]
         public void SetUp()
@@ -37,7 +40,27 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions.UnitTests
             _zendeskClientMock = new Mock<IZendeskClient>();
             _appConfig = Options.Create(new ApplicationConfiguration { AppleAppId = "apple123", GooglePackageName = "com.google" });
             _loggerMock = new Mock<ILogger<ZendeskWebhookFunction>>();
-            _function = new ZendeskWebhookFunction(_repoMock.Object, _appleClientMock.Object, _googleClientMock.Object, _zendeskClientMock.Object, _appConfig, _loggerMock.Object);
+
+            // Zendesk client id drives both the field-id set and the "is sandbox" check.
+            // Use a production-style client id here so the sync tests (if re-enabled)
+            // exercise the "post back to app stores" path.
+            _configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Zendesk:ClientId"] = "prod-client-id",
+                    ["Zendesk:Subdomain"] = "das",
+                    ["Zendesk:ClientSecret"] = "secret"
+                })
+                .Build();
+
+            _function = new ZendeskWebhookFunction(
+                _repoMock.Object,
+                _appleClientMock.Object,
+                _googleClientMock.Object,
+                _zendeskClientMock.Object,
+                _appConfig,
+                _loggerMock.Object,
+                _configuration);
 
             var serviceProvider = new Mock<IServiceProvider>();
             var loggerFactory = new Mock<ILoggerFactory>();
@@ -146,5 +169,218 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions.UnitTests
                 It.Is<ZendeskTicket>(t => t.RatingApp == "5_app" && t.Comment.Contains("Great")),
                 It.IsAny<CancellationToken>()), Times.Once);
         }
+
+        //[Test]
+        //public async Task RunSyncReplies_WhenAgentReplyExists_PostsReplyToAppleAndSavesResponse()
+        //{
+        //    var review = new Review
+        //    {
+        //        Id = 1,
+        //        VendorId = 1,
+        //        ExternalId = "apple_review_1",
+        //        ZendeskTicketId = "12345"
+        //    };
+
+        //    var comments = new List<ZendeskComment>
+        //    {
+        //        new ZendeskComment
+        //        {
+        //            Id = "comment_1",
+        //            Body = "Thank you for your feedback!",
+        //            AuthorRole = "agent",
+        //            Public = true,
+        //            CreatedAt = DateTime.UtcNow
+        //        }
+        //    };
+
+        //    _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        //    _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(new[] { review });
+        //    _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("12345", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(comments);
+        //    _repoMock.Setup(x => x.ResponseExistsForReviewAsync(1, "comment_1", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(false);
+
+        //    await _function.RunSyncReplies(new TimerInfo());
+
+        //    _appleClientMock.Verify(x => x.PostResponseAsync("apple123", "apple_review_1", "Thank you for your feedback!", It.IsAny<CancellationToken>()), Times.Once);
+        //    _repoMock.Verify(x => x.InsertResponseAsync(1, "Thank you for your feedback!", "SupportAgent", It.IsAny<DateTime>(), It.IsAny<CancellationToken>(), "comment_1"), Times.Once);
+        //    _zendeskClientMock.Verify(x => x.UpdateTicketAsync("12345", It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+        //}
+
+        //[Test]
+        //public async Task RunSyncReplies_WhenGoogleReview_ShouldPostToGoogle()
+        //{
+        //    var review = new Review
+        //    {
+        //        Id = 2,
+        //        VendorId = 2,
+        //        ExternalId = "google_review_1",
+        //        ZendeskTicketId = "67890"
+        //    };
+
+        //    var comments = new List<ZendeskComment>
+        //    {
+        //        new ZendeskComment
+        //        {
+        //            Id = "comment_2",
+        //            Body = "Thanks for your review!",
+        //            AuthorRole = "agent",
+        //            Public = true,
+        //            CreatedAt = DateTime.UtcNow
+        //        }
+        //    };
+
+        //    _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        //    _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(new[] { review });
+        //    _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("67890", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(comments);
+        //    _repoMock.Setup(x => x.ResponseExistsForReviewAsync(2, "comment_2", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(false);
+
+        //    await _function.RunSyncReplies(new TimerInfo());
+
+        //    _googleClientMock.Verify(x => x.PostResponseAsync("com.google", "google_review_1", "Thanks for your review!", It.IsAny<CancellationToken>()), Times.Once);
+        //    _repoMock.Verify(x => x.InsertResponseAsync(2, "Thanks for your review!", "SupportAgent", It.IsAny<DateTime>(), It.IsAny<CancellationToken>(), "comment_2"), Times.Once);
+        //}
+
+        //[Test]
+        //public async Task RunSyncReplies_WhenNonProduction_SkipsPostToAppStoreButStillRecordsResponse()
+        //{
+        //    Environment.SetEnvironmentVariable("EnvironmentName", "AT");
+
+        //    var review = new Review
+        //    {
+        //        Id = 1,
+        //        VendorId = 1,
+        //        ExternalId = "apple_review_1",
+        //        ZendeskTicketId = "12345"
+        //    };
+
+        //    var comments = new List<ZendeskComment>
+        //    {
+        //        new ZendeskComment
+        //        {
+        //            Id = "comment_1",
+        //            Body = "Thank you for your feedback!",
+        //            AuthorRole = "agent",
+        //            Public = true,
+        //            CreatedAt = DateTime.UtcNow
+        //        }
+        //    };
+
+        //    _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        //    _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(new[] { review });
+        //    _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("12345", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(comments);
+        //    _repoMock.Setup(x => x.ResponseExistsForReviewAsync(1, "comment_1", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(false);
+
+        //    await _function.RunSyncReplies(new TimerInfo());
+
+        //    _appleClientMock.Verify(x => x.PostResponseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        //    _googleClientMock.Verify(x => x.PostResponseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        //    _repoMock.Verify(x => x.InsertResponseAsync(1, "Thank you for your feedback!", "SupportAgent", It.IsAny<DateTime>(), It.IsAny<CancellationToken>(), "comment_1"), Times.Once);
+        //    _zendeskClientMock.Verify(x => x.UpdateTicketAsync("12345", It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+        //}
+
+        //[Test]
+        //public async Task RunSyncReplies_WhenReplyAlreadyProcessed_SkipsIt()
+        //{
+        //    var review = new Review
+        //    {
+        //        Id = 1,
+        //        VendorId = 1,
+        //        ExternalId = "apple_review_1",
+        //        ZendeskTicketId = "12345"
+        //    };
+
+        //    var comments = new List<ZendeskComment>
+        //    {
+        //        new ZendeskComment
+        //        {
+        //            Id = "comment_1",
+        //            Body = "Thank you for your feedback!",
+        //            AuthorRole = "agent",
+        //            Public = true,
+        //            CreatedAt = DateTime.UtcNow
+        //        }
+        //    };
+
+        //    _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        //    _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(new[] { review });
+        //    _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("12345", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(comments);
+        //    _repoMock.Setup(x => x.ResponseExistsForReviewAsync(1, "comment_1", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(true);
+
+        //    await _function.RunSyncReplies(new TimerInfo());
+
+        //    _appleClientMock.Verify(x => x.PostResponseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        //    _repoMock.Verify(x => x.InsertResponseAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>(), It.IsAny<string>()), Times.Never);
+        //}
+
+        //[Test]
+        //public async Task RunSyncReplies_WhenNoAgentReply_DoesNothing()
+        //{
+        //    var review = new Review
+        //    {
+        //        Id = 1,
+        //        VendorId = 1,
+        //        ExternalId = "apple_review_1",
+        //        ZendeskTicketId = "12345"
+        //    };
+
+        //    var comments = new List<ZendeskComment>
+        //    {
+        //        new ZendeskComment
+        //        {
+        //            Id = "comment_1",
+        //            Body = "User said something",
+        //            AuthorRole = "end-user",
+        //            Public = true,
+        //            CreatedAt = DateTime.UtcNow
+        //        }
+        //    };
+
+        //    _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        //    _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(new[] { review });
+        //    _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("12345", It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(comments);
+
+        //    await _function.RunSyncReplies(new TimerInfo());
+
+        //    _appleClientMock.Verify(x => x.PostResponseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        //    _repoMock.Verify(x => x.InsertResponseAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>(), It.IsAny<string>()), Times.Never);
+        //}
+
+        //[Test]
+        //public async Task RunSyncReplies_WhenExceptionOccurs_LogsErrorAndContinues()
+        //{
+        //    var review = new Review
+        //    {
+        //        Id = 1,
+        //        VendorId = 1,
+        //        ExternalId = "apple_review_1",
+        //        ZendeskTicketId = "12345"
+        //    };
+
+        //    _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        //    _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+        //        .ReturnsAsync(new[] { review });
+        //    _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("12345", It.IsAny<CancellationToken>()))
+        //        .ThrowsAsync(new Exception("Zendesk API error"));
+
+        //    await _function.RunSyncReplies(new TimerInfo());
+
+        //    _loggerMock.Verify(l => l.Log(LogLevel.Error, It.IsAny<EventId>(),
+        //        It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Failed to sync reply for review 1")),
+        //        It.IsAny<Exception>(),
+        //        It.IsAny<Func<It.IsAnyType, Exception, string>>()), Times.Once);
+        //}
     }
 }

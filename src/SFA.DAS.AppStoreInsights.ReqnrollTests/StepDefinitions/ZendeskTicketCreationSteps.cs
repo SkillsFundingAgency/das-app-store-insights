@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -9,6 +10,7 @@ using SFA.DAS.AppStoreInsights.Shared.Repositories;
 using SFA.DAS.AppStoreInsights.ZendeskBridge.Functions;
 using SFA.DAS.AppStoreInsights.ZendeskBridge.Functions.Configuration;
 using SFA.DAS.AppStoreInsights.ReqnrollTests.TestInfrastructure;
+using System.Collections.Generic;
 
 namespace SFA.DAS.AppStoreInsights.ReqnrollTests.StepDefinitions;
 
@@ -92,13 +94,24 @@ public class ZendeskTicketCreationSteps
     public async Task WhenTheTicketCreationTimerRuns()
     {
         var appConfig = new ApplicationConfiguration();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Zendesk:ClientId"] = "test-sandbox-client",
+                ["Zendesk:Subdomain"] = "test-subdomain",
+                ["Zendesk:ClientSecret"] = "test-secret"
+            })
+            .Build();
+
         _function = new ZendeskWebhookFunction(
             _testRunContext.Repository,
             _testRunContext.AppleClientMock.Object,
             _testRunContext.GoogleClientMock.Object,
             _testRunContext.ZendeskClientMock.Object,
             Options.Create(appConfig),
-            NullLogger<ZendeskWebhookFunction>.Instance);
+            NullLogger<ZendeskWebhookFunction>.Instance,
+            configuration);
 
         await _function.RunCreateTickets(new TimerInfo(), new Mock<FunctionContext>().Object);
     }
