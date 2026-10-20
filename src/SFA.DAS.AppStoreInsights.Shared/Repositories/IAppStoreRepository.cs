@@ -17,6 +17,12 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
         Task<bool> ReviewExistsAsync(byte vendorId, string externalId, CancellationToken ct);
         Task InsertReviewAsync(Review review, CancellationToken ct);
         Task InsertUsageMetricAsync(UsageMetric metric, CancellationToken ct);
+        Task<IEnumerable<Review>> GetUnprocessedReviewsAsync(int appId, CancellationToken ct);
+        Task<IEnumerable<Review>> GetReviewsWithTicketButNoResponseAsync(int appId, CancellationToken ct);
+        Task UpdateReviewZendeskTicketIdAsync(long reviewId, string ticketId, CancellationToken ct);
+        Task<Review> GetReviewByZendeskTicketIdAsync(string ticketId, CancellationToken ct);
+        Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct, string? externalResponseId = null);
+        Task<bool> ResponseExistsForReviewAsync(long reviewId, string externalResponseId, CancellationToken ct);
     }
 
     [ExcludeFromCodeCoverage]
@@ -68,23 +74,113 @@ namespace SFA.DAS.AppStoreInsights.Shared.Repositories
         public async Task InsertUsageMetricAsync(UsageMetric metric, CancellationToken ct)
         {
             const string sql = @"
-            MERGE INTO [dbo].[UsageMetric] AS target
-            USING (SELECT @AppId AS AppId, @VendorId AS VendorId, @MetricDate AS MetricDate) AS source
-            ON target.AppId = source.AppId 
-               AND target.VendorId = source.VendorId 
-               AND target.MetricDate = source.MetricDate
-            WHEN MATCHED THEN
-                UPDATE SET 
-                    Downloads = @Downloads,
-                    ActiveUsers = @ActiveUsers,
-                    CreatedAt = GETUTCDATE()
-            WHEN NOT MATCHED THEN
-                INSERT (AppId, VendorId, MetricDate, Downloads, ActiveUsers)
-                VALUES (@AppId, @VendorId, @MetricDate, @Downloads, @ActiveUsers);";
+                MERGE INTO [dbo].[UsageMetric] AS target
+                USING (SELECT @AppId AS AppId, @VendorId AS VendorId, @MetricDate AS MetricDate) AS source
+                ON target.AppId = source.AppId 
+                   AND target.VendorId = source.VendorId 
+                   AND target.MetricDate = source.MetricDate
+                WHEN MATCHED THEN
+                    UPDATE SET 
+                        Downloads = @Downloads,
+                        ActiveUsers = @ActiveUsers,
+                        CreatedAt = GETUTCDATE()
+                WHEN NOT MATCHED THEN
+                    INSERT (AppId, VendorId, MetricDate, Downloads, ActiveUsers)
+                    VALUES (@AppId, @VendorId, @MetricDate, @Downloads, @ActiveUsers);";
 
             using var conn = _connectionFactory.CreateConnection(_connectionString);
             await conn.ExecuteAsync(
                 new CommandDefinition(sql, metric, cancellationToken: ct));
+        }
+
+        public async Task<IEnumerable<Review>> GetUnprocessedReviewsAsync(int appId, CancellationToken ct)
+        {
+            const string sql = @"
+                SELECT Id, AppId, VendorId, ExternalId, ReviewerName, Rating, Title, Comment, ReviewDate, DeviceInfo, IsNegative, ZendeskTicketId, ProcessedAt
+                FROM [dbo].[Review] 
+                WHERE AppId = @appId 
+                    AND (ZendeskTicketId IS NULL OR ZendeskTicketId = '')
+                    AND ProcessedAt IS NULL
+                ORDER BY ReviewDate DESC";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            return await conn.QueryAsync<Review>(
+                new CommandDefinition(sql, new { appId }, cancellationToken: ct));
+        }
+
+        public async Task<IEnumerable<Review>> GetReviewsWithTicketButNoResponseAsync(int appId, CancellationToken ct)
+        {
+            const string sql = @"
+                SELECT r.Id, r.AppId, r.VendorId, r.ExternalId, r.ReviewerName, r.Rating, r.Title, r.Comment, r.ReviewDate, r.DeviceInfo, r.IsNegative, r.ZendeskTicketId, r.ProcessedAt
+                FROM [dbo].[Review] r
+                LEFT JOIN [dbo].[Response] resp ON r.Id = resp.ReviewId
+                WHERE r.AppId = @appId
+                    AND r.ZendeskTicketId IS NOT NULL
+                    AND r.ZendeskTicketId != ''
+                    AND resp.Id IS NULL
+                ORDER BY r.ReviewDate DESC";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            return await conn.QueryAsync<Review>(
+                new CommandDefinition(sql, new { appId }, cancellationToken: ct));
+        }
+        public async Task UpdateReviewZendeskTicketIdAsync(long reviewId, string ticketId, CancellationToken ct)
+        {
+            const string sql = @"
+                UPDATE [dbo].[Review] 
+                SET ZendeskTicketId = @ticketId, 
+                    ProcessedAt = @processedAt,
+                    UpdatedAt = GETUTCDATE()
+                WHERE Id = @reviewId";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            await conn.ExecuteAsync(
+                new CommandDefinition(
+                    sql,
+                    new { reviewId, ticketId, processedAt = DateTime.UtcNow },
+                    cancellationToken: ct));
+        }
+
+        public async Task<Review> GetReviewByZendeskTicketIdAsync(string ticketId, CancellationToken ct)
+        {
+            const string sql = @"
+                SELECT Id, AppId, VendorId, ExternalId, ReviewerName, Rating, Title, Comment, ReviewDate, DeviceInfo, IsNegative, ZendeskTicketId
+                FROM [dbo].[Review] 
+                WHERE ZendeskTicketId = @ticketId";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            return await conn.QueryFirstOrDefaultAsync<Review>(
+                new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+        }
+
+        public async Task InsertResponseAsync(long reviewId, string responseText, string responder, DateTime respondedAt, CancellationToken ct, string? externalResponseId = null)
+        {
+            const string sql = @"
+                INSERT INTO [dbo].[Response] (ReviewId, ResponderType, ResponseText, ResponseDate, ExternalResponseId, CreatedAt)
+                VALUES (@reviewId, @responderType, @responseText, @responseDate, @externalResponseId, @createdAt)";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            await conn.ExecuteAsync(
+                new CommandDefinition(sql, new
+                {
+                    reviewId,
+                    responderType = responder,
+                    responseText,
+                    responseDate = respondedAt,
+                    externalResponseId = externalResponseId,
+                    createdAt = DateTime.UtcNow
+                }, cancellationToken: ct));
+        }
+
+        public async Task<bool> ResponseExistsForReviewAsync(long reviewId, string externalResponseId, CancellationToken ct)
+        {
+            const string sql = @"
+                SELECT COUNT(1) FROM [dbo].[Response] WHERE ReviewId = @reviewId AND ExternalResponseId = @externalResponseId";
+
+            using var conn = _connectionFactory.CreateConnection(_connectionString);
+            var count = await conn.ExecuteScalarAsync<int>(
+                new CommandDefinition(sql, new { reviewId, externalResponseId }, cancellationToken: ct));
+            return count > 0;
         }
     }
 }
