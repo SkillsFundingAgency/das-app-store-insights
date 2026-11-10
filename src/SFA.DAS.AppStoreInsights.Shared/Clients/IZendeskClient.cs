@@ -39,7 +39,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
     {
         public string Id { get; set; }                 // Unique comment ID
         public string Body { get; set; }               // Comment text
-        public string AuthorRole { get; set; }         // "agent" or "end-user"
+        public string AuthorRole { get; set; }         // "end-user", "agent", "admin" or "unknown"
         public bool Public { get; set; }               // True if public, false if internal note
         public DateTime CreatedAt { get; set; }        // UTC timestamp
     }

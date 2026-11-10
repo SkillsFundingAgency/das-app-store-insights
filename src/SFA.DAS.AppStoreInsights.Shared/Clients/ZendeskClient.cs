@@ -314,7 +314,9 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             await EnsureAuthenticatedAsync(cancellationToken);
 
             var comments = new List<ZendeskComment>();
-            string url = $"tickets/{ticketId}/comments.json";
+            // include=users sideloads the comment authors so we can resolve their role.
+            // Zendesk comments only carry author_id, not an author object.
+            string url = $"tickets/{ticketId}/comments.json?include=users";
 
             while (!string.IsNullOrEmpty(url))
             {
@@ -329,27 +331,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 }
 
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                using var document = JsonDocument.Parse(json);
-                var root = document.RootElement;
-
-                if (root.TryGetProperty("comments", out var commentsArray))
-                {
-                    foreach (var comment in commentsArray.EnumerateArray())
-                    {
-                        comments.Add(new ZendeskComment
-                        {
-                            Id = comment.GetProperty("id").ToString(),
-                            Body = comment.GetProperty("body").GetString() ?? string.Empty,
-                            AuthorRole = comment.TryGetProperty("author", out var author) && author.TryGetProperty("role", out var role)
-                                ? role.GetString() ?? "unknown" : "unknown",
-                            Public = comment.TryGetProperty("public", out var isPublic) && isPublic.GetBoolean(),
-                            CreatedAt = comment.TryGetProperty("created_at", out var createdAt)
-                                ? DateTime.Parse(createdAt.GetString()) : DateTime.UtcNow
-                        });
-                    }
-                }
-
-                url = root.TryGetProperty("next_page", out var nextPage) ? nextPage.GetString() : null;
+                url = ZendeskCommentParser.ParsePage(json, comments);
             }
 
             return comments;
