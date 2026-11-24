@@ -257,6 +257,47 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions.UnitTests
         }
 
         [Test]
+        public async Task RunSyncReplies_WhenGoogleReplyTooLong_DoesNotPostOrSaveResponse()
+        {
+            var review = new Review
+            {
+                Id = 2,
+                VendorId = 2,
+                ExternalId = "google_review_1",
+                ZendeskTicketId = "67890"
+            };
+
+            var comments = new List<ZendeskComment>
+            {
+                new ZendeskComment
+                {
+                    Id = "comment_2",
+                    Body = new string('a', 351),
+                    AuthorRole = "agent",
+                    Public = true,
+                    CreatedAt = DateTime.UtcNow
+                }
+            };
+
+            _repoMock.Setup(x => x.GetAppIdAsync("Apprentice App", It.IsAny<CancellationToken>())).ReturnsAsync(1);
+            _repoMock.Setup(x => x.GetReviewsWithTicketButNoResponseAsync(1, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new[] { review });
+            _zendeskClientMock.Setup(x => x.GetTicketCommentsAsync("67890", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(comments);
+            _repoMock.Setup(x => x.ResponseExistsForReviewAsync(2, "comment_2", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+
+            await _function.RunSyncReplies(new TimerInfo());
+
+            _googleClientMock.Verify(x => x.PostResponseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            _repoMock.Verify(x => x.InsertResponseAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>(), It.IsAny<string>()), Times.Never);
+            _loggerMock.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Google Play allows 350")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()), Times.Once);
+        }
+
+        [Test]
         public async Task RunSyncReplies_WhenGoogleReview_ShouldPostToGoogle()
         {
             var review = new Review

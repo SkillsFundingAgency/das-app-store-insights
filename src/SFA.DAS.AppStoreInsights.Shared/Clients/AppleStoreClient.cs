@@ -347,7 +347,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
             {
                 data = new
                 {
-                    type = "reviewResponses",
+                    type = "customerReviewResponses",
                     attributes = new { responseBody = responseText },
                     relationships = new
                     {
@@ -359,7 +359,7 @@ namespace SFA.DAS.AppStoreInsights.Shared.Clients
                 }
             };
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var response = await SendWithRetryAsync(() => _httpClient.PostAsync("reviewResponses", content, cancellationToken));
+            var response = await SendWithRetryAsync(() => _httpClient.PostAsync("customerReviewResponses", content, cancellationToken));
             if (!response.IsSuccessStatusCode)
             {
                 var error = await response.Content.ReadAsStringAsync(cancellationToken);
