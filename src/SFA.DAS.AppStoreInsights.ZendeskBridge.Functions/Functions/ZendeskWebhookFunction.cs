@@ -117,6 +117,17 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
                         continue;
                     }
 
+                    // Google Play rejects replies over 350 characters. Skip with a clear warning
+                    // instead of failing; once the agent adds a shorter public reply, the next
+                    // run picks that up because it uses the latest staff reply.
+                    if (review.VendorId == 2 && agentReply.Body.Length > GooglePlayMaxReplyLength)
+                    {
+                        _logger.LogWarning(
+                            "Reply on Zendesk ticket {TicketId} for review {ReviewId} is {Length} characters; Google Play allows {MaxLength}. Not posted - the agent needs to add a shorter public reply.",
+                            review.ZendeskTicketId, review.Id, agentReply.Body.Length, GooglePlayMaxReplyLength);
+                        continue;
+                    }
+
                     if (isProduction)
                     {
                         if (review.VendorId == 1)
@@ -155,6 +166,8 @@ namespace SFA.DAS.AppStoreInsights.ZendeskBridge.Functions
                 }
             }
         }
+
+        private const int GooglePlayMaxReplyLength = 350;
 
         // Zendesk gives admins the role "admin" rather than "agent"; both are staff replies.
         private static bool IsStaffRole(string role) =>
